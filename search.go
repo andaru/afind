@@ -1,6 +1,7 @@
 package afind
 
 import (
+	"path"
 	"bytes"
 	"io"
 	"os"
@@ -12,62 +13,91 @@ import (
 	"github.com/golang/glog"
 )
 
-type SearchRequest struct {
-	Re     string `json:"text"`
-	PathRe string `json:"path"`
-	Cs     bool `json:"cs"`
+// Request metadata
+// Used to fine tune sources chosen by a search
+type reqMeta map[string]string
 
-	Key string `json:"key"` // The source shard key
+// A search request provided by either a user or an Afind front-end
+type SearchRequest struct {
+	Re     string  `json:"q"` // The search regular expression
+	PathRe string  `json:"path"` // Search only in file paths matching this
+	Cs     bool    `json:"cs"`   // Case sensitive? (non-sensitive by default)
+	Key    string  `json:"key"`  // Search only sources with this Source prefix
+	Meta   reqMeta `json:"meta"` // Search sources matching this metadata query
 }
 
-func NewSearchRequest(textRe string) SearchRequest {
-	return SearchRequest{Re: textRe, Cs: false}
+func NewSearchRequest() SearchRequest {
+	return SearchRequest{Cs: false, Meta: make(reqMeta)}
 }
 
 func NewSearchRequestWithPath(textRe, pathRe string) SearchRequest {
-	return SearchRequest{Re: textRe, PathRe: pathRe, Cs: false}
+	return SearchRequest{
+		Re:     textRe,
+		PathRe: pathRe,
+		Cs:     false,
+		Meta:   make(reqMeta)}
 }
+
+// A match line plus source key slice (will become a 2 element json array)
+type matchsrc []string
 
 type SearchResponse struct {
 	// Matches from the query.
 	// Keys of the outer map are matching filenames.
 	// Keys of the inner map are line numbers in each matching file.
-	// Values of the inner map is the matching line.
-	M map[string]map[string]string `json:"matches"`
+	// Values of the inner map is an array of the matching line and source index
+	M map[string]map[string][]*matchsrc `json:"matches"`
 
-	numMatches int `json:"num_matches"` // the total number of lines matched
+	// the total number of lines matched
+	NLinesMatched int `json:"num_matches"`
+
+	// map from short local source index (used in matchsrc) to global source key
+	Sources map[string]string `json:"sources"`
+
+	// set on single source responses, not frontend responses
+	sourceKey string
 }
 
-func (s *SearchResponse) Merge(src *SearchResponse) {
-	glog.V(6).Info("merging", s.numMatches, "matches into master response")
+func (s *SearchResponse) merge(src *SearchResponse) {
+	newp := 0
+	nummatch := 0
+
 	for name, matches := range src.M {
-		// TODO: remap the filename based on local rules.
-		// For example, we may want to change
-		// /var/build/$project/src/Foo to /src/$project/Foo,
-		// can use a regex rewrite rule.
+		// Apply filter transformations to matching paths
+		for _, pf := range pathfilter {
+			name = pf.Match.ReplaceAllString(name, string(pf.Replace))
+		}
 
 		// Insert the new file entry.
 		if _, ok := s.M[name]; !ok {
-			s.M[name] = make(map[string]string)
+			newp++
+			s.M[name] = make(map[string][]*matchsrc)
 		}
 		for k, v := range matches {
-			// TODO: deal with collisions, which can happen with
-			// branching, et. al (if we don't use a rewrite rule
-			// to build something of the Perforce path in here).
-
-			// Can use collision to show the diffs between
-			// branches either by calculating the diffs in
-			// a custom form of this merge function, or by
-			// storing all versions of the same line by
-			// suffixing "_$key" onto the line number,
-			// e.g., "245_17903" for line 245 in project 17903.
-			s.M[name][k] = v
+			if _, ok := s.M[name][k]; !ok {
+				s.M[name][k] = make([]*matchsrc, 0)
+			}
+			s.M[name][k] = append(s.M[name][k], v...)
+			nummatch++
 		}
+	}
+	s.NLinesMatched = s.NLinesMatched + nummatch
+	if newp > 0 {
+		glog.V(6).Infof("source key %s has %d matches in %d files",
+			src.sourceKey, nummatch, newp)
 	}
 }
 
 func NewSearchResponse() *SearchResponse {
-	return &SearchResponse{M: make(map[string]map[string]string)}
+	return &SearchResponse{
+		M:       make(map[string]map[string][]*matchsrc),
+		Sources: make(map[string]string)}
+}
+
+func newSearchResponseFromSearcher(s *searcher) *SearchResponse {
+	sr := NewSearchResponse()
+	sr.sourceKey = s.source.Key
+	return sr
 }
 
 type Searcher interface {
@@ -79,21 +109,23 @@ type searcher struct {
 	regexp.Grep
 	buf []byte // private from regexp.Grep
 
-	indexPath string
-	lastErr   error
-	t         EventTimer
+	source  *Source
+	lastErr error
+	t       EventTimer
 }
 
 func (s searcher) Elapsed() time.Duration {
 	return s.t.Elapsed()
 }
 
-func NewSearcher(index string) *searcher {
-	return &searcher{t: NewEvent(), indexPath: index}
+func NewSearcher(source Source) *searcher {
+	return &searcher{
+		source: &source,
+		t:      NewEvent()}
 }
 
-func NewSearcherFromSource(source Source) *searcher {
-	return &searcher{t: NewEvent(), indexPath: source.IndexPath}
+func NewSearcherFromIndex(path string) *searcher {
+	return NewSearcher(Source{IndexPath: path})
 }
 
 var nl = []byte{'\n'}
@@ -115,12 +147,17 @@ func (s *searcher) Search(request SearchRequest) (
 	response *SearchResponse, err error) {
 
 	response = NewSearchResponse()
+	response.sourceKey = s.source.Key
 
+	response = newSearchResponseFromSearcher(s)
 	s.t.Start()
 	defer s.t.Stop()
 
-	if _, err := os.Stat(s.indexPath); os.IsNotExist(err) {
-		return nil, err
+	ixfilename := path.Join(s.source.RootPath, s.source.IndexPath)
+	glog.V(6).Infof("trying source index: %s", ixfilename)
+	if _, err := os.Stat(ixfilename); os.IsNotExist(err) {
+		glog.Error("index not found: %s (%s)", ixfilename, err)
+		return response, err
 	}
 
 	pattern := "(?m)" + request.Re
@@ -129,7 +166,7 @@ func (s *searcher) Search(request SearchRequest) (
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		return nil, err
+		return
 	}
 	s.Regexp = re
 
@@ -137,12 +174,12 @@ func (s *searcher) Search(request SearchRequest) (
 	if request.PathRe != "" {
 		fileRe, err = regexp.Compile(request.PathRe)
 		if err != nil {
-			return nil, err
+			return
 		}
 	}
 
 	// open the index file
-	ix := index.Open(s.indexPath)
+	ix := index.Open(s.source.IndexPath)
 	q := index.RegexpQuery(re.Syntax)
 	var post []uint32
 	post = ix.PostingQuery(q)
@@ -163,18 +200,19 @@ func (s *searcher) Search(request SearchRequest) (
 		name := ix.Name(id_)
 		matches, err := s.GrepFile(name)
 		if err != nil {
+			s.lastErr = err
 			glog.Error(name, err)
 		}
 		if len(matches) > 0 {
 			err = nil
 			response.M[name] = matches
-			response.numMatches += len(matches)
+			response.NLinesMatched += len(matches)
 		}
 	}
 	return
 }
 
-func (s *searcher) Reader(r io.Reader, name string) (map[string]string, error) {
+func (s *searcher) Reader(r io.Reader, name string) (map[string][]*matchsrc, error) {
 	if s.buf == nil {
 		s.buf = make([]byte, 1<<20)
 	}
@@ -185,7 +223,7 @@ func (s *searcher) Reader(r io.Reader, name string) (map[string]string, error) {
 		lineno    = 1
 		beginText = true
 		endText   = false
-		matches   = make(map[string]string)
+		matches   = make(map[string][]*matchsrc)
 	)
 
 	for {
@@ -215,7 +253,9 @@ func (s *searcher) Reader(r io.Reader, name string) (map[string]string, error) {
 			}
 			lineno += countNL(buf[chunkStart:lineStart])
 			line := buf[lineStart:lineEnd]
-			matches[strconv.Itoa(lineno)] = string(line)
+			ln := strconv.Itoa(lineno)
+			respline := &matchsrc{string(line), s.source.Key}
+			matches[ln] = append(matches[ln], respline)
 			lineno++
 			chunkStart = lineEnd
 		}
@@ -237,11 +277,41 @@ func (s *searcher) Reader(r io.Reader, name string) (map[string]string, error) {
 	return matches, err
 }
 
-func (s *searcher) GrepFile(filename string) (m map[string]string, err error) {
+func (s *searcher) GrepFile(filename string) (
+	m map[string][]*matchsrc, err error) {
+
 	f, err := os.Open(filename)
 	if err != nil {
 		return m, err
 	}
 	defer f.Close()
 	return s.Reader(f, filename)
+}
+
+// Remote searcher interface; for searching remote afind backends
+
+type remoteSearcher struct {
+	source *Source
+	lastErr error
+	t       EventTimer
+}
+
+func (s *remoteSearcher) Search(request SearchRequest) (sr *SearchResponse, err error) {
+	sr = NewSearchResponse()
+	sr.sourceKey = s.source.Key
+	s.t.Start()
+	defer s.t.Stop()
+
+	status, err := remoteSearch(s.source, request, sr)
+	glog.V(6).Info(FN(), " status=", status, " err=", err)
+	return sr, err
+}
+
+func NewRemoteSearcher(source Source) *remoteSearcher {
+	if source.Host == "" {
+		panic("sourceKey must not be empty")
+	}
+	return &remoteSearcher{
+		source: &source,
+		t:      NewEvent()}
 }

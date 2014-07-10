@@ -14,15 +14,15 @@ type KeyValueStore interface {
 	Size() int
 }
 
-type IterableKeyValueStore interface {
-	KeyValueStore
-	Iterator
-}
-
 type IterFunc func(key string, value interface{}) bool
 
 type Iterator interface {
 	ForEach(IterFunc) error
+}
+
+type IterableKeyValueStore interface {
+	KeyValueStore
+	Iterator
 }
 
 type kvstore struct {
@@ -47,7 +47,6 @@ func (s *kvstore) Get(k string) (v interface{}, ok bool) {
 
 	v, ok = s.d[k]
 	return
-
 }
 
 func (s *kvstore) Set(k string, v interface{}) error {

@@ -13,9 +13,13 @@ import (
 	"github.com/golang/glog"
 )
 
-const (
-	DEFAULT_NOINDEX_REGEXP = `"\(\.\(rpm$|gz$|bz2$|zip$\)` +
-		`\|/autogen/\|autom4te\.ca\|RPMS/cachedir\)"`
+var (
+	DEFAULT_NOINDEX_REGEXP = regexp.MustCompile(
+		`"\(\.\(rpm$|gz$|bz2$|zip$\)` +
+			`\|\/\.\(git|hg|svn\)\/` +
+			`\|\/autogen\/` +
+			`\|autom4te\.ca` +
+			`\|RPMS\/cachedir\)"`)
 )
 
 const (
@@ -65,18 +69,21 @@ func (self SourceState) MarshalJSON() ([]byte, error) {
 //
 // A Source is a single shard within the code search system.
 type Source struct {
-	Key       string      `json:"key"`          // The key for this source shard
-	Host      string      `json:"host"`         // The hostname containing the source (empty is local)
-	RootPath  string      `json:"rootpath"`     // The path to prefix all Paths with
-	IndexPath string      `json:"indexpath"`    // The path to the source's index file
-	Paths     []string    `json:"paths"`        // Data to index is in these paths
-	State     SourceState `json:"state,string"` // The state of this source's index
+	Key       string            `json:"key"`          // The key for this source shard
+	Host      string            `json:"host"`         // The hostname containing the source (empty is local)
+	RootPath  string            `json:"rootpath"`     // The path to prefix all Paths with
+	IndexPath string            `json:"indexpath"`    // The path to the source's index file
+	Paths     []string          `json:"paths"`        // Data to index is in these paths
+	State     SourceState       `json:"state,string"` // The state of this source's index
+	Meta      map[string]string `json:"meta"`         // Source metadata (matched by requests)
 
-	filesIndexed int
+	FilesIndexed int `json:"num_files"` // Number of files indexed
 	filesSkipped int
-	numDirs      int
+	NumDirs      int `json:"num_dirs"` // Number of directories in index
 	noindex      string
-	t            *Event
+
+	indexer Indexer // The local or remote indexer for this source
+	t       *Event
 }
 
 func NewSource(key string, index string) *Source {
@@ -100,13 +107,11 @@ func NewSourceWithPaths(key string, index string, paths []string) *Source {
 	return s
 }
 
-func NewSourceCopy(src Source) *Source {
-	return &Source{
-		Key:       src.Key,
-		IndexPath: src.IndexPath,
-		RootPath:  src.RootPath,
-		Paths:     src.Paths,
-		t:         NewEvent()}
+func InitSource(src *Source) {
+	src.t = NewEvent()
+	if src.Meta == nil {
+		src.Meta = make(map[string]string)
+	}
 }
 
 func abs(s []string) []string {
@@ -124,74 +129,67 @@ func (s *Source) Elapsed() time.Duration {
 	return s.t.Elapsed()
 }
 
-func (s *Source) Index() error {
+func (s *Source) IsLocal() bool {
+	hostname, err := os.Hostname()
+	if s.Host == "" || (err == nil && hostname == s.Host) {
+		return true
+	}
+	return false
+}
+
+type localIndexer struct {
+	src *Source
+}
+
+type remoteIndexer struct {
+	src *Source
+}
+
+func (s localIndexer) Index() error {
 	var err error
 	var reg *regexp.Regexp
 
-	s.t.Start()
-	defer s.t.Stop()
+	s.src.State = S_INDEXING
 
-	noindex := s.noindex
-	if noindex == "" {
-		noindex = DEFAULT_NOINDEX_REGEXP
-	}
-	glog.V(6).Infof("indexing %d paths for key [%s]", len(s.Paths), s.Key)
+	s.src.t.Start()
+	defer s.src.t.Stop()
 
-	reg, err = regexp.Compile(noindex)
-	if err != nil {
-		return err
+	glog.Infof("Index %+v", s)
+
+	if s.src.noindex != "" {
+		reg, err = regexp.Compile(s.src.noindex)
+		if err != nil {
+			glog.Errorln("noindex regexp syntax error, using default")
+			reg = DEFAULT_NOINDEX_REGEXP
+		}
+	} else {
+		reg = DEFAULT_NOINDEX_REGEXP
 	}
 
 	// Remove any bogus and empty paths
-	for i, p := range s.Paths {
-		p = path.Join(s.RootPath, p)
+	for i, p := range s.src.Paths {
+		p = path.Join(s.src.RootPath, p)
 		if absPath, err := filepath.Abs(p); err == nil {
-			s.Paths[i] = absPath
+			s.src.Paths[i] = absPath
 		} else {
 			glog.Errorf("error %s: %s", p, err)
 			// Delete this entry rather than setting it
-			s.Paths = append(s.Paths[:i], s.Paths[i+1:]...)
+			s.src.Paths = append(s.src.Paths[:i], s.src.Paths[i+1:]...)
 		}
 	}
 
-	// Start indexing - this may crash here if s.IndexPath doesn't exist
-	ix := index.Create(s.IndexPath)
-	ix.AddPaths(s.Paths)
-
-	for _, path := range s.Paths {
-		filepath.Walk(path,
-			func(path string, info os.FileInfo, werr error) error {
-				if info == nil {
-					return nil
-				}
-				// skip excluded files, directories
-				if noindex != "" && reg.FindString(path) != "" {
-					s.filesSkipped++
-					if glog.V(6) {
-						glog.V(6).Infoln("skip", path)
-					}
-					if info.IsDir() {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-				if info.IsDir() {
-					s.numDirs++
-				}
-				// Maybe set the last error
-				if werr != nil {
-					err = werr
-					return nil
-				}
-				if info != nil && info.Mode()&os.ModeType == 0 {
-					ix.AddFile(path)
-					// TODO: count errors
-					s.filesIndexed++
-				}
-				return nil
-			})
+	ixfilename := path.Join(s.src.RootPath, s.src.IndexPath)
+	_, err = os.OpenFile(ixfilename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	if os.IsExist(err) {
+		err = os.Remove(ixfilename)
+	} else if err != nil {
+		return err
 	}
+	glog.V(6).Infof("trying to create index: %s", ixfilename)
+	ix := index.Create(ixfilename)
+	ix.AddPaths(s.src.Paths)
 	ix.Flush()
+	s.src.pathwalk(reg, ix)
 
 	// Setup a panic recovery deferral for index.Merge()'s burps
 	defer func() {
@@ -204,10 +202,64 @@ func (s *Source) Index() error {
 		}
 	}()
 	if err != nil {
-		s.State = S_ERROR
+		s.src.State = S_ERROR
 	} else {
-		s.State = S_AVAILABLE
+		s.src.State = S_AVAILABLE
 	}
-	glog.V(6).Infof("indexed %d total directories\n", s.numDirs)
+	glog.V(6).Infof("indexed %d total directories\n", s.src.NumDirs)
+	return err
+}
+
+func (s remoteIndexer) Index() error {
+	status, err := remoteIndex(s.src)
+
+	glog.V(6).Info(FN(), " status=", status, " err=", err)
+	return err
+}
+
+func (s *Source) Index() error {
+	if s.IsLocal() {
+		s.indexer = localIndexer{s}
+	} else {
+		s.indexer = remoteIndexer{s}
+	}
+	return s.indexer.Index()
+}
+
+func (s *Source) pathwalk(reg *regexp.Regexp, ix *index.IndexWriter) error {
+	var err error
+	for _, path := range s.Paths {
+		filepath.Walk(path,
+			func(path string, info os.FileInfo, werr error) error {
+				if info == nil {
+					return nil
+				}
+				// skip excluded files, directories
+				if reg != nil && reg.FindString(path) != "" {
+					s.filesSkipped++
+					if glog.V(6) {
+						glog.V(6).Infoln("skip", path)
+					}
+					if info.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if info.IsDir() {
+					s.NumDirs++
+				}
+				// Maybe set the last error
+				if werr != nil {
+					err = werr
+					return nil
+				}
+				if info != nil && info.Mode()&os.ModeType == 0 {
+					ix.AddFile(path)
+					// TODO: count errors
+					s.FilesIndexed++
+				}
+				return nil
+			})
+	}
 	return err
 }

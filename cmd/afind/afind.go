@@ -64,7 +64,7 @@ func exitOnBadArgs() {
 func search() {
 	exitOnBadArgs()
 
-	s := afind.NewSearcher(*flagIndexFile)
+	s := afind.NewSearcherFromIndex(*flagIndexFile)
 	request := afind.NewSearchRequestWithPath(*flagSearch, *flagSearchPath)
 	response, err := s.Search(request)
 	if err != nil {
