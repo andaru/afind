@@ -73,7 +73,6 @@ func AddSource(src Source, r render.Render, s IterableKeyValueStore) {
 	if ok && source.State == S_NULL && v.(*Source).State == S_AVAILABLE {
 		// Don't reindex existing available indices
 		glog.V(2).Infof("%s not clobbering source key %s", FN(), source.Key)
-		return
 	} else {
 		if source.State == S_NULL {
 			if source.t == nil {
@@ -93,6 +92,21 @@ func AddSource(src Source, r render.Render, s IterableKeyValueStore) {
 	}
 }
 
+func GetSourcePaths(
+	r render.Render, params martini.Params, s IterableKeyValueStore) {
+	key := params["key"]
+	if v, ok := s.Get(key); ok {
+		source := v.(*Source)
+		glog.Info(FN(), " ", source)
+		if files, err := source.Files(); err == nil {
+			r.JSON(200, files)
+		} else {
+			glog.Error(FN(), " error: ", err.Error())
+			r.JSON(500, err)
+		}
+	}
+}
+
 func GetSource(r render.Render, params martini.Params, s IterableKeyValueStore) {
 	key := params["key"]
 	if source, ok := s.Get(key); ok {
@@ -107,26 +121,7 @@ func GetSources(r render.Render, s IterableKeyValueStore) {
 	r.JSON(200, data)
 }
 
-func UpdateSource(source Source, r render.Render,
-	params martini.Params, s IterableKeyValueStore) {
-
-	key := params["key"]
-	if _, ok := s.Get(key); ok {
-		if source.State == S_NULL {
-			err := source.Index()
-			if err != nil {
-				r.JSON(500, source)
-			}
-		}
-		s.Set(source.Key, source)
-		r.JSON(200, source)
-	} else {
-		r.JSON(404, source)
-	}
-}
-
 func DeleteSource(r render.Render, params martini.Params, s IterableKeyValueStore) {
-
 	key := params["key"]
 	if _, ok := s.Get(key); ok {
 		s.Delete(key)
@@ -156,6 +151,22 @@ func PostSearch(request SearchRequest, r render.Render, s IterableKeyValueStore)
 	}
 }
 
+func GetSearch(req *http.Request, r render.Render, s IterableKeyValueStore) {
+	sr := NewSearchRequest()
+	updateRequestFromParams(req, &sr)
+	errs := validateGetSearch(req, &sr)
+	if len(*errs) > 0 {
+		r.JSON(500, errs)
+	} else {
+		response, err := doSearch(sr, s)
+		if err != nil {
+			r.JSON(500, binding.Errors{*err})
+		} else {
+			r.JSON(200, response)
+		}
+	}
+}
+
 func doSearch(request SearchRequest, s IterableKeyValueStore) (
 		response *SearchResponse, err *binding.Error) {
 
@@ -178,22 +189,7 @@ func doSearch(request SearchRequest, s IterableKeyValueStore) (
 	}
 }
 
-func GetSearch(req *http.Request, r render.Render, s IterableKeyValueStore) {
-	sr := NewSearchRequest()
-	updateRequestFromParams(req, &sr)
-	errs := validateGet(req, &sr)
-	if len(*errs) > 0 {
-		r.JSON(500, errs)
-	} else {
-		response, err := doSearch(sr, s)
-		if err != nil {
-			r.JSON(500, binding.Errors{*err})
-		} else {
-			r.JSON(200, response)
-		}
-	}
-}
-
+// Get the query parameters from a GET request
 func updateRequestFromParams(req *http.Request, r *SearchRequest) {
 	query := req.URL.Query()
 	if q := query.Get("q"); q != "" {
@@ -213,7 +209,8 @@ func updateRequestFromParams(req *http.Request, r *SearchRequest) {
 	}
 }
 
-func validateGet(req *http.Request, sr *SearchRequest) *binding.Errors {
+// Wrap the binding Validation for GET requests
+func validateGetSearch(req *http.Request, sr *SearchRequest) *binding.Errors {
 	return sr.Validate(binding.Errors{}, req)
 }
 

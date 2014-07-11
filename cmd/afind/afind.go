@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	flagHttp = flag.Bool("http", false, "Run HTTP server")
+	flagHttp    = flag.Bool("http", false, "Run HTTP server")
 	flagAddress = flag.String(
 		"address", ":8080", "Local address:port for server")
 	flagIndex      = flag.Bool("index", false, "Indexing mode")
@@ -19,6 +19,7 @@ var (
 	flagIndexFile  = flag.String("ixfile", "", "Index file name")
 	flagKey        = flag.String("key", "", "Source shard key")
 	flagSearchPath = flag.String("path", "", "Pathname regular expression")
+	flagMaster     = flag.Bool("master", false, "Master mode (default: slave)")
 )
 
 func init() {

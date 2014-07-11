@@ -1,6 +1,7 @@
 package afind
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"code.google.com/p/codesearch/index"
+	regexp_ "code.google.com/p/codesearch/regexp"
 	"github.com/golang/glog"
 )
 
@@ -262,4 +264,27 @@ func (s *Source) pathwalk(reg *regexp.Regexp, ix *index.IndexWriter) error {
 			})
 	}
 	return err
+}
+
+func (s *Source) Files() (files []string, err error) {
+	files = make([]string, 0)
+	if s.IsLocal() {
+		ixfilename := path.Join(s.RootPath, s.IndexPath)
+
+		if _, err = os.Open(ixfilename); !os.IsPermission(err) && !os.IsNotExist(err) {
+			ix := index.Open(ixfilename)
+			re, _ := regexp_.Compile(".*")
+			q := index.RegexpQuery(re.Syntax)
+			for _, id_ := range ix.PostingQuery(q) {
+				glog.Info(id_)
+				files = append(files, ix.Name(id_))
+			}
+		} else {
+			err = errors.New(
+				`Source index ` + ixfilename + ` not available`)
+		}
+	} else {
+		err = errors.New("Cannot retrieve paths for a remote index")
+	}
+	return
 }

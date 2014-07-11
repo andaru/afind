@@ -45,14 +45,11 @@ type SearchResponse struct {
 	// Matches from the query.
 	// Keys of the outer map are matching filenames.
 	// Keys of the inner map are line numbers in each matching file.
-	// Values of the inner map is an array of the matching line and source index
+	// Inner map values are an array of the matching line and source key
 	M map[string]map[string][]*matchsrc `json:"matches"`
 
 	// the total number of lines matched
 	NLinesMatched int `json:"num_matches"`
-
-	// map from short local source index (used in matchsrc) to global source key
-	Sources map[string]string `json:"sources"`
 
 	// set on single source responses, not frontend responses
 	sourceKey string
@@ -89,9 +86,7 @@ func (s *SearchResponse) merge(src *SearchResponse) {
 }
 
 func NewSearchResponse() *SearchResponse {
-	return &SearchResponse{
-		M:       make(map[string]map[string][]*matchsrc),
-		Sources: make(map[string]string)}
+	return &SearchResponse{M:make(map[string]map[string][]*matchsrc)}
 }
 
 func newSearchResponseFromSearcher(s *searcher) *SearchResponse {
