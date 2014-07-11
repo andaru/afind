@@ -67,7 +67,6 @@ func (s *SearchResponse) merge(src *SearchResponse) {
 
 		// Insert the new file entry.
 		if _, ok := s.M[name]; !ok {
-			newp++
 			s.M[name] = make(map[string][]*matchsrc)
 		}
 		for k, v := range matches {
@@ -75,14 +74,9 @@ func (s *SearchResponse) merge(src *SearchResponse) {
 				s.M[name][k] = make([]*matchsrc, 0)
 			}
 			s.M[name][k] = append(s.M[name][k], v...)
-			nummatch++
 		}
 	}
 	s.NLinesMatched = s.NLinesMatched + nummatch
-	if newp > 0 {
-		glog.V(6).Infof("source key %s has %d matches in %d files",
-			src.sourceKey, nummatch, newp)
-	}
 }
 
 func NewSearchResponse() *SearchResponse {
