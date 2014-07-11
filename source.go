@@ -172,9 +172,9 @@ func (s *localIndexer) Index() error {
 
 	// Remove any bogus and empty paths
 	for i, p := range s.src.Paths {
-		p = path.Join(s.src.RootPath, p)
-		if absPath, err := filepath.Abs(p); err == nil {
-			s.src.Paths[i] = absPath
+		ap := path.Join(s.src.RootPath, p)
+		if _, err := filepath.Abs(ap); err == nil {
+			s.src.Paths[i] = p
 		} else {
 			glog.Errorf("error %s: %s", p, err)
 			// Delete this entry rather than setting it
@@ -193,7 +193,11 @@ func (s *localIndexer) Index() error {
 	glog.V(6).Infof("creating source index file: %s", ixfilename)
 	ix := index.Create(ixfilename)
 	glog.V(6).Info("adding paths to index: ", s.src.Paths)
-	ix.AddPaths(s.src.Paths)
+	fullpaths := make([]string, 0, len(s.src.Paths))
+	for _, p := range s.src.Paths {
+		fullpaths = append(fullpaths, path.Join(s.src.RootPath, p))
+	}
+	ix.AddPaths(fullpaths)
 	s.src.pathwalk(reg, ix)
 	ix.Flush()
 
