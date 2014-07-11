@@ -183,6 +183,7 @@ func (s *searcher) Search(request SearchRequest) (
 	err = nil
 
 	ix := index.Open(ixfilename)
+	glog.V(6).Info(FN(), " opened index ", ixfilename)
 	q := index.RegexpQuery(re.Syntax)
 	var post []uint32
 	post = ix.PostingQuery(q)
@@ -199,11 +200,13 @@ func (s *searcher) Search(request SearchRequest) (
 		post = files
 	}
 
+	glog.V(6).Info(FN(), " found ", len(post), " posts")
 	for _, id_ := range post {
 		name := ix.Name(id_)
 		matches, err := s.GrepFile(name)
 		if err != nil {
 			s.lastErr = err
+			glog.V(6).Info(FN(), " error: ", err.Error())
 			glog.Error(name, err)
 		}
 		if len(matches) > 0 {
