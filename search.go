@@ -1,10 +1,10 @@
 package afind
 
 import (
-	"path"
 	"bytes"
 	"io"
 	"os"
+	"path"
 	"strconv"
 	"time"
 
@@ -19,11 +19,11 @@ type reqMeta map[string]string
 
 // A search request provided by either a user or an Afind front-end
 type SearchRequest struct {
-	Re     string  `json:"q"` // The search regular expression
-	PathRe string  `json:"path"` // Search only in file paths matching this
-	Cs     bool    `json:"cs"`   // Case sensitive? (non-sensitive by default)
-	Key    string  `json:"key"`  // Search only sources with this Source prefix
-	Meta   reqMeta `json:"meta"` // Search sources matching this metadata query
+	Re     string  `json:"q" binding:"required"` // The search regular expression
+	PathRe string  `json:"path"`                 // Search only in file paths matching this
+	Cs     bool    `json:"cs"`                   // Case sensitive? (non-sensitive by default)
+	Key    string  `json:"key"`                  // Search only sources with this Source prefix
+	Meta   reqMeta `json:"meta"`                 // Search sources matching this metadata query
 }
 
 func NewSearchRequest() SearchRequest {
@@ -86,7 +86,7 @@ func (s *SearchResponse) merge(src *SearchResponse) {
 }
 
 func NewSearchResponse() *SearchResponse {
-	return &SearchResponse{M:make(map[string]map[string][]*matchsrc)}
+	return &SearchResponse{M: make(map[string]map[string][]*matchsrc)}
 }
 
 func newSearchResponseFromSearcher(s *searcher) *SearchResponse {
@@ -145,6 +145,7 @@ func (s *searcher) Search(request SearchRequest) (
 	response.sourceKey = s.source.Key
 
 	response = newSearchResponseFromSearcher(s)
+	s.t = NewEvent()
 	s.t.Start()
 	defer s.t.Stop()
 
@@ -286,7 +287,7 @@ func (s *searcher) GrepFile(filename string) (
 // Remote searcher interface; for searching remote afind backends
 
 type remoteSearcher struct {
-	source *Source
+	source  *Source
 	lastErr error
 	t       EventTimer
 }

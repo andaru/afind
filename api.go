@@ -4,8 +4,8 @@ import (
 	"errors"
 	"flag"
 	"net/http"
-	"time"
 	"strings"
+	"time"
 
 	"github.com/andaru/sub"
 
@@ -28,32 +28,30 @@ func bindError(field, classification, message string) binding.Error {
 		Message:        message}
 }
 
-func (s SearchRequest) Validate(errs *binding.Errors, r *http.Request) *binding.Errors {
-	glog.V(6).Infof(FN(), " %+v", s)
-	e := make(binding.Errors, 0)
+func (s SearchRequest) Validate(errs binding.Errors, r *http.Request) binding.Errors {
+	glog.V(6).Infof("%s %#v", FN(), s)
 	if len(s.Re) <= 2 {
-		e.Add([]string{}, ArgumentError, "must be 3 or more characters")
+		errs.Add([]string{"q"}, ArgumentError, "must be 3 or more characters")
 	}
 	if len(s.Re) <= 6 && (strings.Contains(s.Re, ".*") ||
 		strings.Contains(s.Re, ".+")) {
-		e.Add([]string{}, ArgumentError, "regexp is too permissive")
+		errs.Add([]string{"q"}, ArgumentError, "regexp is too permissive")
 	}
-	return &e
+	return errs
 }
 
-func (s Source) Validate(errs *binding.Errors, r *http.Request) *binding.Errors {
-	glog.V(6).Infof(FN(), " %+v", s)
-	e := make(binding.Errors, 0)
+func (s Source) Validate(errs binding.Errors, r *http.Request) binding.Errors {
+	glog.V(6).Infof("%s %#v", FN(), s)
 	if s.Key == "" {
-		e.Add([]string{"key"}, ArgumentError, "must not be empty")
+		errs.Add([]string{"key"}, ArgumentError, "must not be empty")
 	}
 	if s.RootPath == "" {
-		e.Add([]string{"root_path"}, ArgumentError, "must not be empty")
+		errs.Add([]string{"root_path"}, ArgumentError, "must not be empty")
 	}
 	if s.IndexPath == "" {
-		e.Add([]string{"index_path"}, ArgumentError, "must not be empty")
+		errs.Add([]string{"index_path"}, ArgumentError, "must not be empty")
 	}
-	return &e
+	return errs
 }
 
 // Source (Indexing) APIs
@@ -72,9 +70,6 @@ func AddSource(src Source, r render.Render, s IterableKeyValueStore) {
 		glog.V(2).Infof("%s not clobbering source key %s", FN(), source.Key)
 	} else {
 		if source.State == S_NULL {
-			if source.t == nil {
-				source.t = NewEvent()
-			}
 			// Index the source (perhaps via a backend call)
 			err = source.Index()
 			if err != nil {
@@ -143,10 +138,10 @@ func getSources(s IterableKeyValueStore) map[string]interface{} {
 // Search APIs
 
 func PostSearch(request SearchRequest, r render.Render, s IterableKeyValueStore) {
-	glog.V(6).Info(FN(), " request ", request)
+	glog.V(6).Infof("%s request %+v", FN(), request)
 	response, err := doSearch(request, s)
 	if err != nil {
-		r.JSON(500, binding.Errors{*err})
+		r.JSON(422, binding.Errors{*err})
 	} else {
 		r.JSON(200, response)
 	}
@@ -156,12 +151,12 @@ func GetSearch(req *http.Request, r render.Render, s IterableKeyValueStore) {
 	sr := NewSearchRequest()
 	updateRequestFromParams(req, &sr)
 	errs := validateGetSearch(req, &sr)
-	if len(*errs) > 0 {
-		r.JSON(500, errs)
+	if len(errs) > 0 {
+		r.JSON(422, errs)
 	} else {
 		response, err := doSearch(sr, s)
 		if err != nil {
-			r.JSON(500, binding.Errors{*err})
+			r.JSON(422, binding.Errors{*err})
 		} else {
 			r.JSON(200, response)
 		}
@@ -169,14 +164,14 @@ func GetSearch(req *http.Request, r render.Render, s IterableKeyValueStore) {
 }
 
 func doSearch(request SearchRequest, s IterableKeyValueStore) (
-		response *SearchResponse, err *binding.Error) {
+	response *SearchResponse, err *binding.Error) {
 
 	sources := sourcesForRequest(request, s)
 	glog.Infof("Search %+v (%d/%d sources)", request, len(sources), s.Size())
 	if len(sources) == 0 {
 		return nil, &binding.Error{
 			Classification: "search",
-			Message: "No source code indices were found for this request"}
+			Message:        "No source code indices were found for this request"}
 	} else {
 		// Concurrently search sources
 		response, err := searchSources(sources, request)
@@ -185,7 +180,7 @@ func doSearch(request SearchRequest, s IterableKeyValueStore) (
 		} else {
 			return nil, &binding.Error{
 				Classification: "search",
-				Message: err.Error()}
+				Message:        err.Error()}
 		}
 	}
 }
@@ -211,8 +206,8 @@ func updateRequestFromParams(req *http.Request, r *SearchRequest) {
 }
 
 // Wrap the binding Validation for GET requests
-func validateGetSearch(req *http.Request, sr *SearchRequest) *binding.Errors {
-	return sr.Validate(&binding.Errors{}, req)
+func validateGetSearch(req *http.Request, sr *SearchRequest) binding.Errors {
+	return sr.Validate(binding.Errors{}, req)
 }
 
 func searchSource(source *Source, request SearchRequest) (*SearchResponse, error) {
@@ -220,7 +215,7 @@ func searchSource(source *Source, request SearchRequest) (*SearchResponse, error
 	// If the source is local (i.e., host is us or host is empty), create a
 	// local searcher, else use a remote searcher (via HTTP POST).
 	if source.IsLocal() {
-		search = NewSearcher(*source)  // local search
+		search = NewSearcher(*source) // local search
 	} else {
 		master := flag.Lookup("master").Value.String()
 		glog.Info("master: ", master)
@@ -275,7 +270,7 @@ func searchSources(
 			seen++
 			incoming := update.(*SearchResponse)
 			sr.merge(incoming)
-		case <-time.After(TIMEOUT_QUERY):  // timeout
+		case <-time.After(TIMEOUT_QUERY): // timeout
 			err = fanin.Close()
 			// Explicitly return from the timeout handler
 			return sr, err
@@ -332,10 +327,3 @@ func sourcesForRequest(request SearchRequest, s IterableKeyValueStore) []*Source
 	}
 	return sources
 }
-
-
-
-
-
-
-

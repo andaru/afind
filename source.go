@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"time"
 
 	"code.google.com/p/codesearch/index"
 	regexp_ "code.google.com/p/codesearch/regexp"
@@ -30,18 +29,6 @@ const (
 	S_AVAILABLE
 	S_ERROR
 )
-
-type badStateChangeError struct {
-	s string
-}
-
-func (e badStateChangeError) Error() string {
-	return e.s
-}
-
-func BadStateChangeError(s string) badStateChangeError {
-	return badStateChangeError{s}
-}
 
 type Indexer interface {
 	Index() error
@@ -71,49 +58,52 @@ func (self SourceState) MarshalJSON() ([]byte, error) {
 //
 // A Source is a single shard within the code search system.
 type Source struct {
-	Key       string            `json:"key"`          // The key for this source shard
-	Host      string            `json:"host"`         // The hostname containing the source (empty is local)
-	RootPath  string            `json:"root_path"`    // The path to prefix all Paths with
-	IndexPath string            `json:"index_path"`   // The path to the source's index file
-	Paths     []string          `json:"paths"`        // Data to index is in these paths
-	State     SourceState       `json:"state,string"` // The state of this source's index
-	Meta      map[string]string `json:"meta"`         // Source metadata (matched by requests)
+	// The key for this source shard
+	Key string `json:"key"`
+	// The hostname containing the source (empty is local)
+	Host string `json:"host"`
+	// The path to prefix all Paths with
+	RootPath string `json:"root_path"`
+	// The path to the source's index file
+	IndexPath string `json:"index_path"`
+	// Data to index is in these paths
+	Paths []string `json:"paths"`
+	// The state of this source's index
+	State SourceState `json:"state,string"`
+	// Source metadata (matched by requests)
+	Meta map[string]string `json:"meta"`
+	// Number of files indexed
+	FilesIndexed int `json:"num_files"`
+	// Number of directories in index
+	NumDirs int `json:"num_dirs"`
+	// Indexing time in nanoseconds
+	T *Event `json:"time_index"`
+	// Regexp of files to skip indexing, default if empty
+	Noindex string `json:"noindex"`
 
-	FilesIndexed int `json:"num_files"` // Number of files indexed
+	// Number files skipped
 	filesSkipped int
-	NumDirs      int `json:"num_dirs"` // Number of directories in index
-	noindex      string
-
-	indexer Indexer // The local or remote indexer for this source
-	t       *Event
+	// The local or remote indexer for this source
+	indexer Indexer
 }
 
 func NewSource(key string, index string) *Source {
 	return &Source{
 		Key:       key,
 		IndexPath: index,
-		Paths:     make([]string, 0),
-		t:         NewEvent()}
+		Paths:     make([]string, 0)}
 }
 
 func NewSourceWithPaths(key string, index string, paths []string) *Source {
 	s := &Source{
 		Key:       key,
 		IndexPath: index,
-		Paths:     make([]string, len(paths)),
-		t:         NewEvent()}
+		Paths:     make([]string, len(paths))}
 
 	for i, path := range paths {
 		s.Paths[i] = path
 	}
 	return s
-}
-
-func InitSource(src *Source) {
-	src.t = NewEvent()
-	if src.Meta == nil {
-		src.Meta = make(map[string]string)
-	}
 }
 
 func abs(s []string) []string {
@@ -125,10 +115,6 @@ func abs(s []string) []string {
 		}
 	}
 	return result
-}
-
-func (s *Source) Elapsed() time.Duration {
-	return s.t.Elapsed()
 }
 
 func (s *Source) IsLocal() bool {
@@ -147,19 +133,17 @@ type remoteIndexer struct {
 	src *Source
 }
 
-func (s localIndexer) Index() error {
+func (s *localIndexer) Index() error {
 	var err error
 	var reg *regexp.Regexp
 
 	s.src.State = S_INDEXING
+	s.src.T.Start()
+	defer s.src.T.Stop()
+	glog.Infof("Index %+v", s.src)
 
-	s.src.t.Start()
-	defer s.src.t.Stop()
-
-	glog.Infof("Index %#v", s.src)
-
-	if s.src.noindex != "" {
-		reg, err = regexp.Compile(s.src.noindex)
+	if s.src.Noindex != "" {
+		reg, err = regexp.Compile(s.src.Noindex)
 		if err != nil {
 			glog.Errorln("noindex regexp syntax error, using default")
 			reg = DEFAULT_NOINDEX_REGEXP
@@ -188,7 +172,7 @@ func (s localIndexer) Index() error {
 		glog.Infof("err: %s %#v", ixfilename, err)
 		return err
 	}
-	glog.V(6).Infof("trying to create index: %s", ixfilename)
+	glog.V(6).Infof("creating source index file: %s", ixfilename)
 	ix := index.Create(ixfilename)
 	ix.AddPaths(s.src.Paths)
 	ix.Flush()
@@ -213,7 +197,7 @@ func (s localIndexer) Index() error {
 	return err
 }
 
-func (s remoteIndexer) Index() error {
+func (s *remoteIndexer) Index() error {
 	status, err := remoteIndex(s.src)
 
 	glog.V(6).Info(FN(), " status=", status, " err=", err)
@@ -221,8 +205,9 @@ func (s remoteIndexer) Index() error {
 }
 
 func (s *Source) Index() error {
+	s.T = NewEvent()
 	if s.IsLocal() {
-		s.indexer = localIndexer{s}
+		s.indexer = &localIndexer{s}
 	} else {
 		master := flag.Lookup("master").Value.String()
 		glog.Info("master: ", master)
@@ -230,7 +215,7 @@ func (s *Source) Index() error {
 			return NewApiError("RemoteOperationError",
 				"This slave can only perform local requests")
 		}
-		s.indexer = remoteIndexer{s}
+		s.indexer = &remoteIndexer{s}
 	}
 	return s.indexer.Index()
 }
