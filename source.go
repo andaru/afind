@@ -196,6 +196,7 @@ func (s *localIndexer) Index() error {
 	for _, p := range s.src.Paths {
 		absPaths = append(absPaths, path.Join(s.src.RootPath, p))
 	}
+	glog.V(6).Info("adding paths to index: ", absPaths)
 	ix.AddPaths(absPaths)
 	ix.Flush()
 	s.src.pathwalk(reg, ix)
