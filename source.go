@@ -255,7 +255,6 @@ func (s *Source) pathwalk(reg *regexp.Regexp, ix *index.IndexWriter) error {
 		glog.V(6).Info("scanning path: ", path)
 		filepath.Walk(path,
 			func(path string, info os.FileInfo, werr error) error {
-				glog.V(6).Info("scanning file: ", path)
 				if info == nil {
 					return nil
 				}
