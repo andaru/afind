@@ -250,13 +250,15 @@ func (s *Source) Index() error {
 
 func (s *Source) pathwalk(reg *regexp.Regexp, ix *index.IndexWriter) error {
 	var err error
-	for _, path := range s.Paths {
+	for _, p := range s.Paths {
+		path := filepath.Join(s.RootPath, p)
+		glog.V(6).Info("scanning path: ", path)
 		filepath.Walk(path,
 			func(path string, info os.FileInfo, werr error) error {
+				glog.V(6).Info("scanning file: ", path)
 				if info == nil {
 					return nil
 				}
-				path = filepath.Join(s.RootPath, path)
 				// skip excluded files, directories
 				if reg != nil && reg.FindString(path) != "" {
 					s.filesSkipped++
