@@ -3,9 +3,9 @@ package afind
 // Provides martini HTTP handlers for the afind web service
 
 import (
+	"github.com/go-martini/martini"
 	"github.com/martini-contrib/binding"
 	"github.com/martini-contrib/render"
-	"github.com/go-martini/martini"
 )
 
 var (
@@ -37,7 +37,7 @@ func AfindServer() *martini.ClassicMartini {
 	m.Get(`/sources/:key/paths`, GetSourcePaths)
 
 	m.Get(`/search`, GetSearch)
-	m.Post(`/search`, binding.Bind(SearchRequest{}), PostSearch)
+	m.Post(`/search`, binding.Json(SearchRequest{}), binding.ErrorHandler, PostSearch)
 
 	return m
 }

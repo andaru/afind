@@ -1,9 +1,6 @@
 package afind
 
-import (
-	"fmt"
-	"time"
-)
+import "time"
 
 type badStateChangeError struct {
 	s string
@@ -54,8 +51,4 @@ func (e *Event) Elapsed() time.Duration {
 func NewEvent() *Event {
 	e := &Event{}
 	return e
-}
-
-func (e *Event) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("%d", e.Elapsed().Nanoseconds())), nil
 }

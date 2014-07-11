@@ -175,7 +175,12 @@ func (s *searcher) Search(request SearchRequest) (
 	}
 
 	// open the index file
-	ix := index.Open(s.source.IndexPath)
+	_, err = os.OpenFile(ixfilename, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	if os.IsNotExist(err) || os.IsPermission(err) {
+		return
+	}
+
+	ix := index.Open(ixfilename)
 	q := index.RegexpQuery(re.Syntax)
 	var post []uint32
 	post = ix.PostingQuery(q)

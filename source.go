@@ -54,6 +54,21 @@ func (self SourceState) MarshalJSON() ([]byte, error) {
 	return []byte(`"` + self.String() + `"`), nil
 }
 
+func (self *SourceState) UnmarshalJSON(b []byte) (err error) {
+	str := string(b)
+	switch str {
+	case "INDEXING":
+		*self = S_INDEXING
+	case "AVAILABLE":
+		*self = S_AVAILABLE
+	case "ERROR":
+		*self = S_ERROR
+	default:
+		*self = S_NULL
+	}
+	return nil
+}
+
 // An afind.Source represents metadata about an indexed source of files.
 //
 // A Source is a single shard within the code search system.
@@ -69,18 +84,21 @@ type Source struct {
 	// Data to index is in these paths
 	Paths []string `json:"paths"`
 	// The state of this source's index
-	State SourceState `json:"state,string"`
+	State SourceState `json:"state,string,omitempty"`
 	// Source metadata (matched by requests)
 	Meta map[string]string `json:"meta"`
 	// Number of files indexed
 	FilesIndexed int `json:"num_files"`
 	// Number of directories in index
 	NumDirs int `json:"num_dirs"`
-	// Indexing time in nanoseconds
-	T *Event `json:"time_index"`
+	// Number of nanoseconds spent indexing
+	TimeIndexing int64
+
 	// Regexp of files to skip indexing, default if empty
 	Noindex string `json:"noindex"`
 
+	// Indexing event
+	t *Event
 	// Number files skipped
 	filesSkipped int
 	// The local or remote indexer for this source
@@ -138,8 +156,8 @@ func (s *localIndexer) Index() error {
 	var reg *regexp.Regexp
 
 	s.src.State = S_INDEXING
-	s.src.T.Start()
-	defer s.src.T.Stop()
+	s.src.t.Start()
+	defer s.src.t.Stop()
 	glog.Infof("Index %+v", s.src)
 
 	if s.src.Noindex != "" {
@@ -205,7 +223,7 @@ func (s *remoteIndexer) Index() error {
 }
 
 func (s *Source) Index() error {
-	s.T = NewEvent()
+	s.t = NewEvent()
 	if s.IsLocal() {
 		s.indexer = &localIndexer{s}
 	} else {

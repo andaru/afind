@@ -72,6 +72,7 @@ func AddSource(src Source, r render.Render, s IterableKeyValueStore) {
 		if source.State == S_NULL {
 			// Index the source (perhaps via a backend call)
 			err = source.Index()
+			source.TimeIndexing = source.t.Elapsed().Nanoseconds()
 			if err != nil {
 				errs.Add([]string{}, "source_index", err.Error())
 			}
