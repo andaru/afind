@@ -194,8 +194,8 @@ func (s *localIndexer) Index() error {
 	ix := index.Create(ixfilename)
 	glog.V(6).Info("adding paths to index: ", s.src.Paths)
 	ix.AddPaths(s.src.Paths)
-	ix.Flush()
 	s.src.pathwalk(reg, ix)
+	ix.Flush()
 
 	// Setup a panic recovery deferral for index.Merge()'s burps
 	defer func() {
