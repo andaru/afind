@@ -192,7 +192,11 @@ func (s *localIndexer) Index() error {
 	}
 	glog.V(6).Infof("creating source index file: %s", ixfilename)
 	ix := index.Create(ixfilename)
-	ix.AddPaths(s.src.Paths)
+	absPaths := make([]string, 0, len(s.src.Paths))
+	for _, p := range s.src.Paths {
+		absPaths = append(absPaths, path.Join(s.src.RootPath, p))
+	}
+	ix.AddPaths(absPaths)
 	ix.Flush()
 	s.src.pathwalk(reg, ix)
 
@@ -204,6 +208,7 @@ func (s *localIndexer) Index() error {
 				panic(r)
 			}
 			err = fmt.Errorf(r.(string))
+			glog.V(6).Info(FN(), "panic recovery: ", err)
 		}
 	}()
 	if err != nil {
@@ -218,7 +223,7 @@ func (s *localIndexer) Index() error {
 func (s *remoteIndexer) Index() error {
 	status, err := remoteIndex(s.src)
 
-	glog.V(6).Info(FN(), " status=", status, " err=", err)
+	glog.V(6).Info(FN(), " status=", status, " source=", s.src, " err=", err)
 	return err
 }
 
@@ -235,7 +240,11 @@ func (s *Source) Index() error {
 		}
 		s.indexer = &remoteIndexer{s}
 	}
-	return s.indexer.Index()
+	s.t.Start()
+	err := s.indexer.Index()
+	s.t.Stop()
+	s.TimeIndexing = s.t.Elapsed().Nanoseconds()
+	return err
 }
 
 func (s *Source) pathwalk(reg *regexp.Regexp, ix *index.IndexWriter) error {

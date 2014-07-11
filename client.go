@@ -25,7 +25,7 @@ func remoteSearch(source *Source, request SearchRequest, response *SearchRespons
 
 	s := napping.Session{}
 	httpresp, err := s.Post(uri, &request, response, errs)
-	glog.V(6).Infof("%s status=%v err=%s", httpresp.Status(), err.Error())
+	glog.V(6).Infof("%s done request", FN())
 	return httpresp.Status(), err
 }
 
