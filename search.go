@@ -179,6 +179,8 @@ func (s *searcher) Search(request SearchRequest) (
 	if os.IsNotExist(err) || os.IsPermission(err) {
 		return
 	}
+	// Don't report any "file exists" error later on, so clear error
+	err = nil
 
 	ix := index.Open(ixfilename)
 	q := index.RegexpQuery(re.Syntax)
