@@ -22,7 +22,7 @@ func remoteSearch(source *Source, request SearchRequest, response *SearchRespons
 	}
 
 	uri := `http://` + source.Host + `:` + DEFAULT_PORT + `/search`
-	glog.V(6).Info(FN(), " backend request to ", uri)
+	glog.V(6).Info(FN(), " backend request to ", uri, " request=", request)
 
 	s := napping.Session{}
 	httpresp, err := s.Post(uri, &request, response, errs)
@@ -40,7 +40,7 @@ func remoteIndex(source *Source) (
 	}
 
 	uri := `http://` + source.Host + `:` + DEFAULT_PORT + `/sources`
-	glog.V(6).Info(FN(), " backend request to ", uri)
+	glog.V(6).Info(FN(), " backend request to ", uri, " source=", source)
 
 	s := napping.Session{}
 	httpresp, err := s.Post(uri, source, source, errs)
