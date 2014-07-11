@@ -21,6 +21,9 @@ func remoteSearch(source *Source, request SearchRequest, response *SearchRespons
 		panic("source Host must not be empty")
 	}
 
+	// Update the request key to only search the shared specified
+	request.Key = source.Key
+	// Send the request
 	uri := `http://` + source.Host + `:` + DEFAULT_PORT + `/search`
 	glog.V(6).Info(FN(), " backend request to ", uri, " request=", request)
 
