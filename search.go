@@ -56,7 +56,6 @@ type SearchResponse struct {
 }
 
 func (s *SearchResponse) merge(src *SearchResponse) {
-	newp := 0
 	nummatch := 0
 
 	for name, matches := range src.M {
@@ -74,6 +73,7 @@ func (s *SearchResponse) merge(src *SearchResponse) {
 				s.M[name][k] = make([]*matchsrc, 0)
 			}
 			s.M[name][k] = append(s.M[name][k], v...)
+			nummatch++
 		}
 	}
 	s.NLinesMatched = s.NLinesMatched + nummatch
