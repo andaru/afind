@@ -239,10 +239,7 @@ func (s *Source) Index() error {
 		}
 		s.indexer = &remoteIndexer{s}
 	}
-	return s.indexer.Index()
-	s.t.Start()
 	err := s.indexer.Index()
-	s.t.Stop()
 	s.TimeIndexing = s.t.Elapsed().Nanoseconds()
 	return err
 }
@@ -275,7 +272,6 @@ func (s *Source) pathwalk(reg *regexp.Regexp, ix *index.IndexWriter) error {
 					return nil
 				}
 				if info != nil && info.Mode()&os.ModeType == 0 {
-					glog.V(6).Info(FN(), " adding path to index: ", path)
 					ix.AddFile(path)
 					// TODO: count errors
 					s.FilesIndexed++
