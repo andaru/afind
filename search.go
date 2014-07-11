@@ -51,13 +51,15 @@ type SearchResponse struct {
 	// the total number of lines matched
 	NLinesMatched int `json:"num_matches"`
 
+	// Source data, provided on merged searches
+	Sources map[string]*Source `json:"sources,omitempty"`
+
 	// set on single source responses, not frontend responses
-	sourceKey string
+	source *Source
 }
 
 func (s *SearchResponse) merge(src *SearchResponse) {
 	nummatch := 0
-
 	for name, matches := range src.M {
 		// Apply filter transformations to matching paths
 		for _, pf := range pathfilter {
@@ -77,16 +79,26 @@ func (s *SearchResponse) merge(src *SearchResponse) {
 		}
 	}
 	s.NLinesMatched = s.NLinesMatched + nummatch
+	s.Sources[src.source.Key] = src.source
 }
 
 func NewSearchResponse() *SearchResponse {
-	return &SearchResponse{M: make(map[string]map[string][]*matchsrc)}
+	return &SearchResponse{
+		M:       make(map[string]map[string][]*matchsrc),
+		Sources: make(map[string]*Source),
+	}
+}
+
+func NewSearchResponseWithSource(s *Source) *SearchResponse {
+	return &SearchResponse{
+		M:       make(map[string]map[string][]*matchsrc),
+		Sources: make(map[string]*Source),
+		source:  s,
+	}
 }
 
 func newSearchResponseFromSearcher(s *searcher) *SearchResponse {
-	sr := NewSearchResponse()
-	sr.sourceKey = s.source.Key
-	return sr
+	return NewSearchResponseWithSource(s.source)
 }
 
 type Searcher interface {
@@ -136,7 +148,7 @@ func (s *searcher) Search(request SearchRequest) (
 	response *SearchResponse, err error) {
 
 	response = NewSearchResponse()
-	response.sourceKey = s.source.Key
+	response.source = s.source
 
 	response = newSearchResponseFromSearcher(s)
 	s.t = NewEvent()
@@ -298,7 +310,7 @@ type remoteSearcher struct {
 
 func (s *remoteSearcher) Search(request SearchRequest) (sr *SearchResponse, err error) {
 	sr = NewSearchResponse()
-	sr.sourceKey = s.source.Key
+	sr.source = s.source
 	s.t.Start()
 	defer s.t.Stop()
 
@@ -309,7 +321,7 @@ func (s *remoteSearcher) Search(request SearchRequest) (sr *SearchResponse, err 
 
 func NewRemoteSearcher(source Source) *remoteSearcher {
 	if source.Host == "" {
-		panic("sourceKey must not be empty")
+		panic("source Host must not be empty")
 	}
 	return &remoteSearcher{
 		source: &source,

@@ -218,7 +218,6 @@ func searchSource(source *Source, request SearchRequest) (*SearchResponse, error
 		search = NewSearcher(*source) // local search
 	} else {
 		master := flag.Lookup("master").Value.String()
-		glog.Info("master: ", master)
 		if master == "false" {
 			return nil, errors.New(
 				"slaves can only perform local operations")
@@ -268,8 +267,7 @@ func searchSources(
 		case update := <-fanin.Updates():
 			// Received an update from the fan-in queue
 			seen++
-			incoming := update.(*SearchResponse)
-			sr.merge(incoming)
+			sr.merge(update.(*SearchResponse))
 		case <-time.After(TIMEOUT_QUERY): // timeout
 			err = fanin.Close()
 			// Explicitly return from the timeout handler
