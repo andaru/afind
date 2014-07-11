@@ -218,8 +218,10 @@ func (s *localIndexer) Index() error {
 }
 
 func (s *remoteIndexer) Index() error {
-	status, err := remoteIndex(s.src)
+	s.src.t.Start()
+	defer s.src.t.Stop()
 
+	status, err := remoteIndex(s.src)
 	glog.V(6).Info(FN(), " status=", status, " source=", s.src, " err=", err)
 	return err
 }
@@ -237,6 +239,7 @@ func (s *Source) Index() error {
 		}
 		s.indexer = &remoteIndexer{s}
 	}
+	return s.indexer.Index()
 	s.t.Start()
 	err := s.indexer.Index()
 	s.t.Stop()
@@ -272,6 +275,7 @@ func (s *Source) pathwalk(reg *regexp.Regexp, ix *index.IndexWriter) error {
 					return nil
 				}
 				if info != nil && info.Mode()&os.ModeType == 0 {
+					glog.V(6).Info(FN(), " adding path to index: ", path)
 					ix.AddFile(path)
 					// TODO: count errors
 					s.FilesIndexed++
