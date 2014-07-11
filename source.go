@@ -192,11 +192,11 @@ func (s *localIndexer) Index() error {
 	}
 	glog.V(6).Infof("creating source index file: %s", ixfilename)
 	ix := index.Create(ixfilename)
-	glog.V(6).Info("adding paths to index: ", s.src.Paths)
 	fullpaths := make([]string, 0, len(s.src.Paths))
 	for _, p := range s.src.Paths {
 		fullpaths = append(fullpaths, path.Join(s.src.RootPath, p))
 	}
+	glog.V(6).Info("adding paths to index: ", fullpaths)
 	ix.AddPaths(fullpaths)
 	s.src.pathwalk(reg, ix)
 	ix.Flush()
