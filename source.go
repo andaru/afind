@@ -256,11 +256,12 @@ func (s *Source) pathwalk(reg *regexp.Regexp, ix *index.IndexWriter) error {
 				if info == nil {
 					return nil
 				}
+				path = filepath.Join(s.RootPath, path)
 				// skip excluded files, directories
 				if reg != nil && reg.FindString(path) != "" {
 					s.filesSkipped++
 					if glog.V(6) {
-						glog.V(6).Infoln("skip", path)
+						glog.V(6).Info("skip", path)
 					}
 					if info.IsDir() {
 						return filepath.SkipDir
