@@ -3,7 +3,6 @@ package afind
 // Provides martini HTTP handlers for the afind web service
 
 import (
-	"flag"
 	"github.com/martini-contrib/binding"
 	"github.com/martini-contrib/render"
 	"github.com/go-martini/martini"
@@ -24,10 +23,13 @@ func AfindServer() *martini.ClassicMartini {
 	}
 	m = martini.Classic()
 	m.Use(render.Renderer())
-	m.Use(Logger())
+	// m.Use(Logger())
+	// Inject the database interface so
+	// it is available to handlers
+	database := NewKvstore()
+	m.Map(&database)
 	// Add API router endpoints
 	m.Post(`/sources`, binding.Bind(Source{}), AddSource)
-	m.Put(`/sources/:key`, UpdateSource)
 	m.Delete(`/sources/:key`, DeleteSource)
 
 	m.Get(`/sources`, GetSources)
@@ -36,10 +38,6 @@ func AfindServer() *martini.ClassicMartini {
 
 	m.Get(`/search`, GetSearch)
 	m.Post(`/search`, binding.Bind(SearchRequest{}), PostSearch)
-	// Inject the database interface so
-	// it is available to handlers
-	database := NewKvstore()
-	m.Map(&database)
 
 	return m
 }

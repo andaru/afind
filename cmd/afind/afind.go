@@ -82,9 +82,10 @@ func main() {
 	} else {
 		if *flagIndex {
 			index()
-		}
-		if *flagSearch != "" {
+		} else if *flagSearch != "" {
 			search()
+		} else {
+			flag.Usage()
 		}
 	}
 }

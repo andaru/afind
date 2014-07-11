@@ -1,7 +1,7 @@
 package afind
 
 import (
-	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path"
@@ -73,8 +73,8 @@ func (self SourceState) MarshalJSON() ([]byte, error) {
 type Source struct {
 	Key       string            `json:"key"`          // The key for this source shard
 	Host      string            `json:"host"`         // The hostname containing the source (empty is local)
-	RootPath  string            `json:"rootpath"`     // The path to prefix all Paths with
-	IndexPath string            `json:"indexpath"`    // The path to the source's index file
+	RootPath  string            `json:"root_path"`    // The path to prefix all Paths with
+	IndexPath string            `json:"index_path"`   // The path to the source's index file
 	Paths     []string          `json:"paths"`        // Data to index is in these paths
 	State     SourceState       `json:"state,string"` // The state of this source's index
 	Meta      map[string]string `json:"meta"`         // Source metadata (matched by requests)
@@ -156,7 +156,7 @@ func (s localIndexer) Index() error {
 	s.src.t.Start()
 	defer s.src.t.Stop()
 
-	glog.Infof("Index %+v", s)
+	glog.Infof("Index %#v", s.src)
 
 	if s.src.noindex != "" {
 		reg, err = regexp.Compile(s.src.noindex)
@@ -185,6 +185,7 @@ func (s localIndexer) Index() error {
 	if os.IsExist(err) {
 		err = os.Remove(ixfilename)
 	} else if err != nil {
+		glog.Infof("err: %s %#v", ixfilename, err)
 		return err
 	}
 	glog.V(6).Infof("trying to create index: %s", ixfilename)
@@ -223,6 +224,12 @@ func (s *Source) Index() error {
 	if s.IsLocal() {
 		s.indexer = localIndexer{s}
 	} else {
+		master := flag.Lookup("master").Value.String()
+		glog.Info("master: ", master)
+		if master == "false" {
+			return NewApiError("RemoteOperationError",
+				"This slave can only perform local requests")
+		}
 		s.indexer = remoteIndexer{s}
 	}
 	return s.indexer.Index()
@@ -280,11 +287,12 @@ func (s *Source) Files() (files []string, err error) {
 				files = append(files, ix.Name(id_))
 			}
 		} else {
-			err = errors.New(
-				`Source index ` + ixfilename + ` not available`)
+			err = NewApiError(
+				`IOError`, `Could not open index `+ixfilename)
 		}
 	} else {
-		err = errors.New("Cannot retrieve paths for a remote index")
+		err = NewApiError(`RemoteOperationError`,
+			`This slave can only perform local requests`)
 	}
 	return
 }

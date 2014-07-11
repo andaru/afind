@@ -1,6 +1,8 @@
 package afind
 
 import (
+	"errors"
+	"flag"
 	"net/http"
 	"time"
 	"strings"
@@ -15,6 +17,8 @@ import (
 
 const (
 	TIMEOUT_QUERY = 30 * time.Second
+
+	ArgumentError = `ArgumentError`
 )
 
 func bindError(field, classification, message string) binding.Error {
@@ -24,38 +28,30 @@ func bindError(field, classification, message string) binding.Error {
 		Message:        message}
 }
 
-func (s SearchRequest) Validate(errs binding.Errors, r *http.Request) *binding.Errors {
+func (s SearchRequest) Validate(errs *binding.Errors, r *http.Request) *binding.Errors {
 	glog.V(6).Infof(FN(), " %+v", s)
 	e := make(binding.Errors, 0)
-	e = append(e, errs...)
 	if len(s.Re) <= 2 {
-		e = append(e, bindError(
-			"q", "invalid_input", "must be 3 or more characters"))
+		e.Add([]string{}, ArgumentError, "must be 3 or more characters")
 	}
-	if len(s.Re) <= 5 && (strings.Contains(s.Re, ".*") ||
+	if len(s.Re) <= 6 && (strings.Contains(s.Re, ".*") ||
 		strings.Contains(s.Re, ".+")) {
-
-		e = append(e, bindError(
-			"q", "too_broad", "regexp is too permissive"))
+		e.Add([]string{}, ArgumentError, "regexp is too permissive")
 	}
 	return &e
 }
 
-func (s Source) Validate(errs binding.Errors, r *http.Request) *binding.Errors {
+func (s Source) Validate(errs *binding.Errors, r *http.Request) *binding.Errors {
 	glog.V(6).Infof(FN(), " %+v", s)
 	e := make(binding.Errors, 0)
-	e = append(e, errs...)
 	if s.Key == "" {
-		e = append(e, bindError(
-			"key", "invalid_input", "must not be empty"))
+		e.Add([]string{"key"}, ArgumentError, "must not be empty")
 	}
 	if s.RootPath == "" {
-		e = append(e, bindError(
-			"rootpath", "invalid_input", "must not be empty"))
+		e.Add([]string{"root_path"}, ArgumentError, "must not be empty")
 	}
 	if s.IndexPath == "" {
-		e = append(e, bindError(
-			"indexpath", "invalid_input", "must not be empty"))
+		e.Add([]string{"index_path"}, ArgumentError, "must not be empty")
 	}
 	return &e
 }
@@ -64,6 +60,7 @@ func (s Source) Validate(errs binding.Errors, r *http.Request) *binding.Errors {
 
 func AddSource(src Source, r render.Render, s IterableKeyValueStore) {
 	var err error
+	var errs binding.Errors
 
 	source := Source(src)
 	glog.V(2).Infof("%s %+v", FN(), source)
@@ -80,6 +77,9 @@ func AddSource(src Source, r render.Render, s IterableKeyValueStore) {
 			}
 			// Index the source (perhaps via a backend call)
 			err = source.Index()
+			if err != nil {
+				errs.Add([]string{}, "source_index", err.Error())
+			}
 		}
 		s.Set(source.Key, &source)
 	}
@@ -88,7 +88,7 @@ func AddSource(src Source, r render.Render, s IterableKeyValueStore) {
 		value, _ := s.Get(source.Key)
 		r.JSON(200, value)
 	} else {
-		r.Error(500)
+		r.JSON(500, errs)
 	}
 }
 
@@ -143,6 +143,7 @@ func getSources(s IterableKeyValueStore) map[string]interface{} {
 // Search APIs
 
 func PostSearch(request SearchRequest, r render.Render, s IterableKeyValueStore) {
+	glog.V(6).Info(FN(), " request ", request)
 	response, err := doSearch(request, s)
 	if err != nil {
 		r.JSON(500, binding.Errors{*err})
@@ -211,7 +212,7 @@ func updateRequestFromParams(req *http.Request, r *SearchRequest) {
 
 // Wrap the binding Validation for GET requests
 func validateGetSearch(req *http.Request, sr *SearchRequest) *binding.Errors {
-	return sr.Validate(binding.Errors{}, req)
+	return sr.Validate(&binding.Errors{}, req)
 }
 
 func searchSource(source *Source, request SearchRequest) (*SearchResponse, error) {
@@ -221,6 +222,12 @@ func searchSource(source *Source, request SearchRequest) (*SearchResponse, error
 	if source.IsLocal() {
 		search = NewSearcher(*source)  // local search
 	} else {
+		master := flag.Lookup("master").Value.String()
+		glog.Info("master: ", master)
+		if master == "false" {
+			return nil, errors.New(
+				"slaves can only perform local operations")
+		}
 		search = NewRemoteSearcher(*source)
 	}
 	// Perform the search
