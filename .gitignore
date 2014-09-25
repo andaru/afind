@@ -2,3 +2,5 @@
 *#
 .#*
 .csearchindex
+*.out
+*.afindex

@@ -3,11 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/andaru/afind"
+	"strings"
 )
 
 var (
@@ -18,7 +16,7 @@ var (
 	flagSearch     = flag.String("search", "", "Search regular expression")
 	flagIndexFile  = flag.String("ixfile", "", "Index file name")
 	flagKey        = flag.String("key", "", "Source shard key")
-	flagSearchPath = flag.String("path", "", "Pathname regular expression")
+	flagSearchPath = flag.String("f", "", "Pathname regular expression")
 	flagMaster     = flag.Bool("master", false, "Master mode (default: slave)")
 )
 
@@ -26,66 +24,66 @@ func init() {
 	flag.Parse()
 }
 
-func index() {
-	exitOnBadArgs()
-
-	absIndexFile, err := filepath.Abs(*flagIndexFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %s\n", err)
-		os.Exit(1)
-	}
-
-	src := afind.NewSourceWithPaths(
-		*flagKey, absIndexFile, flag.Args())
-	err = src.Index()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %s\n", err)
-	}
-}
-
-func exitOnBadArgs() {
-	if *flagIndexFile == "" || *flagKey == "" {
-		fmt.Fprintf(
-			os.Stderr,
-			"--ixfile and --key must be set\n")
-		os.Exit(1)
-	} else if *flagIndexFile == "" {
-		fmt.Fprintf(
-			os.Stderr,
-			"--ixfile must be set\n")
-		os.Exit(1)
-	} else if *flagKey == "" {
-		fmt.Fprintf(
-			os.Stderr,
-			"--key must be set\n")
-		os.Exit(1)
-	}
-}
-
-func search() {
-	exitOnBadArgs()
-
-	s := afind.NewSearcherFromIndex(*flagIndexFile)
-	request := afind.NewSearchRequestWithPath(*flagSearch, *flagSearchPath)
-	response, err := s.Search(request)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %s\n", err)
+func search(query string) {
+	fmt.Printf("Searching for '%s'", query)
+	key := *flagKey
+	if key == "" {
+		fmt.Println()
 	} else {
-		fmt.Println(len(response.M), "files match regexp", request.Re)
+		fmt.Println(" in repo", key)
 	}
 }
 
 func main() {
-	if *flagHttp {
-		server := afind.AfindServer()
-		http.ListenAndServe(*flagAddress, server)
-	} else {
-		if *flagIndex {
-			index()
-		} else if *flagSearch != "" {
-			search()
-		} else {
-			flag.Usage()
-		}
+	if len(flag.Args()) < 1 {
+		flag.Usage()
+		return
 	}
+
+	command := strings.ToLower(flag.Arg(0))
+	args := flag.Args()[1:]
+	context := newContext()
+	if context.rpcClient == nil {
+		return
+	}
+
+	switch command {
+	case "index":
+		fmt.Println("index")
+	case "search":
+		fmt.Println("foo:", args)
+		if len(args) == 1 {
+			// valid
+			request := afind.SearchRequest{
+				Re:     args[0],
+				PathRe: *flagSearchPath,
+			}
+			fmt.Printf("searching %#v\n", request)
+			fmt.Println(context.Search(request))
+		} else {
+			// invalid
+		}
+	default:
+		fmt.Errorf("Unknown command '%s'\n", command)
+	}
+}
+
+func newContext() *ctx {
+	client, err := afind.NewRpcClient(*flagAddress)
+	fmt.Println(client)
+	if err != nil {
+		fmt.Printf("Failed to connect to server '%s'\n", *flagAddress)
+		client = nil
+	}
+	return &ctx{
+		rpcSvrAddress: *flagAddress,
+		repoKey:       *flagKey,
+		rpcClient:     client,
+	}
+}
+
+type ctx struct {
+	rpcSvrAddress string
+	repoKey       string
+	rpcClient     *afind.RpcClient
 }

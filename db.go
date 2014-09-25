@@ -1,75 +1,62 @@
 package afind
 
-// db provides the KeyValueStore and Iterator interfaces
-// and implementations
-
 import (
 	"sync"
 )
 
-type KeyValueStore interface {
-	Get(string) (interface{}, bool)
-	Set(string, interface{}) error
-	Delete(string) error
-	Size() int
+type db struct {
+	*sync.RWMutex
+	r map[string]*Repo
 }
 
-type IterFunc func(key string, value interface{}) bool
+type iterFunc func(key string, value interface{}) bool
 
-type Iterator interface {
-	ForEach(IterFunc) error
+type KeyValueStorer interface {
+	Get(key string) interface{}
+	Set(key string, value interface{}) error
+	Delete(key string) error
+
+	// Iteration
+	ForEach(f iterFunc)
 }
 
-type IterableKeyValueStore interface {
-	KeyValueStore
-	Iterator
+func (d *db) Get(key string) interface{} {
+	d.RLock()
+	defer d.RUnlock()
+
+	if repo, ok := d.r[key]; !ok {
+		return nil
+	} else {
+		return repo
+	}
 }
 
-type kvstore struct {
-	sync.RWMutex
-	d map[string]interface{}
-}
+func (d *db) Set(key string, value interface{}) error {
+	d.Lock()
+	defer d.Unlock()
 
-func NewKvstore() kvstore {
-	return kvstore{d:make(map[string]interface{})}
-}
-
-func (s *kvstore) Size() int {
-	s.RLock()
-	defer s.RUnlock()
-
-	return len(s.d)
-}
-
-func (s *kvstore) Get(k string) (v interface{}, ok bool) {
-	s.RLock()
-	defer s.RUnlock()
-
-	v, ok = s.d[k]
-	return
-}
-
-func (s *kvstore) Set(k string, v interface{}) error {
-	s.Lock()
-	defer s.Unlock()
-
-	s.d[k] = v
+	if value == nil {
+		return d.Delete(key)
+	}
+	d.r[key] = value.(*Repo)
 	return nil
 }
 
-func (s *kvstore) Delete(k string) error {
-	s.Lock()
-	defer s.Unlock()
-
-	delete(s.d, k)
+func (d *db) Delete(key string) error {
+	delete(d.r, key)
 	return nil
 }
 
-func (s *kvstore) ForEach(iter IterFunc) error {
-	for k, v := range s.d {
-		if !iter(k, v) {
-			break
+func (d *db) ForEach(f iterFunc) {
+	for key, _ := range d.r {
+		if v := d.Get(key); v != nil {
+			if !f(key, v) {
+				return
+			}
 		}
 	}
-	return nil
+}
+
+func newDb() *db {
+	return &db{&sync.RWMutex{}, make(map[string]*Repo)}
 }
