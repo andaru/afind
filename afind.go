@@ -67,14 +67,8 @@ func (s *System) Start() error {
 	// 	glog.Error("Error starting HTTP server:", err)
 	// 	return err
 	// }
-	var err error
-
 	s.setupRpcServer()
-	err = s.startRpcServer()
-	if err != nil {
-		glog.Error("Error starting RPC server:", err)
-	}
-	return err
+	return s.startRpcServer()
 }
 
 func (s *System) startHttpServer() error {

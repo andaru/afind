@@ -3,12 +3,11 @@ package main
 import (
 	"flag"
 
-	"fmt"
 	"github.com/andaru/afind"
 )
 
 var (
-	indexRoot   = flag.String("index_root", "/tmp", "Local index root path")
+	indexRoot   = flag.String("index_root", "/tmp", "Index path")
 	indexInRepo = flag.Bool("index_in_repo", true,
 		"Whether to prefix --index_root with the repo root directory")
 	noIndex     = flag.String("noindex", "", "Filename regexp to not index")
@@ -25,7 +24,6 @@ func init() {
 		RpcBindFlag: *rpcBindFlag,
 		BindFlag:    *bindFlag,
 	}
-
 	// Update the system configuration
 	afind.SetConfig(c)
 }
@@ -33,6 +31,5 @@ func init() {
 func main() {
 	a := afind.New()
 	a.Start()
-	fmt.Printf("started\n")
 	a.WaitForExit()
 }

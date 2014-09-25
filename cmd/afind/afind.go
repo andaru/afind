@@ -3,15 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
+	"strings"
 
 	"github.com/andaru/afind"
-	"strings"
 )
 
 var (
-	flagHttp    = flag.Bool("http", false, "Run HTTP server")
-	flagAddress = flag.String(
-		"address", ":8080", "Local address:port for server")
+	flagHttp       = flag.Bool("http", false, "Run HTTP server")
+	flagInsens     = flag.Bool("i", false, "Case insensitive search")
+	flagAddress    = flag.String("address", ":30800", "Connect to")
 	flagIndex      = flag.Bool("index", false, "Indexing mode")
 	flagSearch     = flag.String("search", "", "Search regular expression")
 	flagIndexFile  = flag.String("ixfile", "", "Index file name")
@@ -24,22 +24,19 @@ func init() {
 	flag.Parse()
 }
 
-func search(query string) {
-	fmt.Printf("Searching for '%s'", query)
-	key := *flagKey
-	if key == "" {
-		fmt.Println()
-	} else {
-		fmt.Println(" in repo", key)
+func search(context *ctx, query string) {
+	request := afind.SearchRequest{
+		Re:     query,
+		PathRe: *flagSearchPath,
 	}
+	sr, err := context.rpcClient.Search(request)
+	if err != nil {
+		fmt.Errorf("Error: %v\n", err)
+	}
+	printMatches(sr)
 }
 
-func main() {
-	if len(flag.Args()) < 1 {
-		flag.Usage()
-		return
-	}
-
+func doAfind() {
 	command := strings.ToLower(flag.Arg(0))
 	args := flag.Args()[1:]
 	context := newContext()
@@ -51,39 +48,48 @@ func main() {
 	case "index":
 		fmt.Println("index")
 	case "search":
-		fmt.Println("foo:", args)
 		if len(args) == 1 {
-			// valid
-			request := afind.SearchRequest{
-				Re:     args[0],
-				PathRe: *flagSearchPath,
-			}
-			fmt.Printf("searching %#v\n", request)
-			fmt.Println(context.Search(request))
+			search(context, args[0])
 		} else {
-			// invalid
+			// invalid, print usage
 		}
 	default:
-		fmt.Errorf("Unknown command '%s'\n", command)
+		// usage
 	}
+}
+
+func printMatches(sr *afind.SearchResponse) {
+	for name, repos := range sr.Files {
+		for repo, matches := range repos {
+			for l, text := range matches {
+				fmt.Printf("%s:%s:%s:%s\n",
+					name, repo, l, text)
+			}
+		}
+	}
+}
+
+func main() {
+	if len(flag.Args()) < 1 {
+		flag.Usage()
+		return
+	}
+	doAfind()
 }
 
 func newContext() *ctx {
 	client, err := afind.NewRpcClient(*flagAddress)
-	fmt.Println(client)
 	if err != nil {
 		fmt.Printf("Failed to connect to server '%s'\n", *flagAddress)
 		client = nil
 	}
 	return &ctx{
-		rpcSvrAddress: *flagAddress,
-		repoKey:       *flagKey,
-		rpcClient:     client,
+		repoKey:   *flagKey,
+		rpcClient: client,
 	}
 }
 
 type ctx struct {
-	rpcSvrAddress string
-	repoKey       string
-	rpcClient     *afind.RpcClient
+	repoKey   string
+	rpcClient *afind.RpcClient
 }

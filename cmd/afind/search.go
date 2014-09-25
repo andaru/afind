@@ -1,17 +1,7 @@
 package main
 
-import (
-	"fmt"
+import "github.com/andaru/afind"
 
-	"github.com/andaru/afind"
-)
-
-func (c *ctx) Search(request afind.SearchRequest) []string {
-	results := make([]string, 0)
-	sr, err := c.rpcClient.Search(request)
-	if err != nil {
-		fmt.Errorf("Error: %v\n", err)
-	}
-	fmt.Println(sr)
-	return results
+func (c *ctx) Search(request afind.SearchRequest) (*afind.SearchResponse, error) {
+	return c.rpcClient.Search(request)
 }
