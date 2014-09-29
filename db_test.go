@@ -1,6 +1,8 @@
 package afind
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestDbGetSetDelete(t *testing.T) {
 	db := newDb()
@@ -28,4 +30,40 @@ func TestDbGetSetDelete(t *testing.T) {
 	if db.Get(key) != nil {
 		t.Error("should get nil for not present keys")
 	}
+}
+
+func TestForEachSuffix(t *testing.T) {
+	d := newDb()
+	repos := map[string]*Repo{
+		`1_001`: &Repo{Key: `1_001`},
+		`1_002`: &Repo{Key: `1_002`},
+		`1_003`: &Repo{Key: `1_003`},
+	}
+
+	for k, r := range repos {
+		d.Set(k, r)
+	}
+
+	var count int
+
+	d.ForEachSuffix(`1`, func(key string, value interface{}) bool {
+		if v := d.Get(key); v == nil {
+			t.Error("could not find value for iterable key", key)
+		}
+		count++
+		return true
+	})
+	if count != 3 {
+		t.Error("want 3 Repo, got", count)
+	}
+
+	count = 0
+	d.ForEachSuffix(`nothing`, func(key string, value interface{}) bool {
+		count++
+		return true
+	})
+	if count != 0 {
+		t.Error("want 0 Repo, got", count)
+	}
+
 }

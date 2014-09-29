@@ -24,6 +24,25 @@ func init() {
 	flag.Parse()
 }
 
+// the union context for any single command execution
+type ctx struct {
+	repoKey   string
+	Meta      map[string]string
+	rpcClient *afind.RpcClient
+}
+
+func newContext() *ctx {
+	client, err := afind.NewRpcClient(*flagAddress)
+	if err != nil {
+		fmt.Printf("Failed to connect to server '%s'\n", *flagAddress)
+		client = nil
+	}
+	return &ctx{
+		repoKey:   *flagKey,
+		rpcClient: client,
+	}
+}
+
 func search(context *ctx, query string) {
 	request := afind.SearchRequest{
 		Re:     query,
@@ -75,21 +94,4 @@ func main() {
 		return
 	}
 	doAfind()
-}
-
-func newContext() *ctx {
-	client, err := afind.NewRpcClient(*flagAddress)
-	if err != nil {
-		fmt.Printf("Failed to connect to server '%s'\n", *flagAddress)
-		client = nil
-	}
-	return &ctx{
-		repoKey:   *flagKey,
-		rpcClient: client,
-	}
-}
-
-type ctx struct {
-	repoKey   string
-	rpcClient *afind.RpcClient
 }

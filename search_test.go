@@ -1,13 +1,22 @@
 package afind
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
 
 func createRepo(t *testing.T, key, root string, paths []string) IndexRequest {
 	ir := newIndexRequest(key, root, paths)
-	_, err := makeIndex(ir)
+
+	dir, file, err := getTempDirWithFile(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(file.Name())
+	defer os.RemoveAll(dir)
+
+	_, err = makeIndex(ir, file)
 	if err != nil {
 		t.Fatal("Expected no error during createRepo, got:", err)
 	}

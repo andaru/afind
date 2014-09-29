@@ -26,20 +26,14 @@ func NewApiError(action, message string) error {
 	return errorMsgAction{errorMsg{message}, action}
 }
 
+//
 
+type IndexAvailableError struct{}
 
+func NewIndexAvailableError() *IndexAvailableError {
+	return &IndexAvailableError{}
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+func (e *IndexAvailableError) Error() string {
+	return "A repository with this key is already available"
+}

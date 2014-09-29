@@ -21,12 +21,14 @@ func TestRpcIndexFunction(t *testing.T) {
 	svr := rpc.NewServer()
 	svr.RegisterName("Afind", rpcsvc)
 	err := rpcsvc.Index(ir, resp)
+
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
 	if len(resp.Repos) != 1 {
 		t.Error("got", len(resp.Repos), "repos, want 1")
 	}
+	t.Logf("repos before bad key get: %#v", resp.Repos)
 	repo := resp.Repos["key"]
 	if repo.SizeData < 1 {
 		t.Error("got zero size data")

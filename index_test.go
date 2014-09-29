@@ -1,6 +1,10 @@
 package afind
 
-import "testing"
+import (
+	"io/ioutil"
+	"os"
+	"testing"
+)
 
 func assertEqual(t *testing.T, a, b interface{}) {
 	if a != b {
@@ -30,26 +34,39 @@ func TestNewIndexRequestWithMeta(t *testing.T) {
 	}
 }
 
+func getTempDirWithFile(testname string) (dir string, f *os.File, err error) {
+	dir, err = ioutil.TempDir("/tmp", "test.afind")
+	if err != nil {
+		return
+	}
+	f, err = ioutil.TempFile(dir, testname)
+	return
+}
+
 func TestMakeIndex(t *testing.T) {
 	req := IndexRequest{Meta: map[string]string{"project": "Foo"}}
 	var resp *IndexResponse
+	var dir string
 	var err error
+	var file *os.File
 
-	resp, err = makeIndex(req)
+	dir, file, err = getTempDirWithFile("TestMakeIndex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(file.Name())
+	defer os.RemoveAll(dir)
+
+	req.Key = "1234"
+	req.Root = dir
+	req.Dirs = []string{"."}
+	resp, err = makeIndex(req, file)
 
 	if err == nil {
 		t.Error("Expected error; got none")
 	}
-
-	req.Key = "some-key"
-	req.Root = "./testdata/repo1"
-	req.Dirs = []string{"."}
-	resp, err = makeIndex(req)
-	if err != nil {
-		t.Error("Expected no error; got", err)
-	}
 	if len(resp.Repos) != 1 {
-		t.Error("Want 1 repo, got %d repos", len(resp.Repos))
+		t.Errorf("Want 1 repo, got %d repos", len(resp.Repos))
 	}
 	for _, resprepo := range resp.Repos {
 		if v, ok := resprepo.Meta["project"]; !ok || v != "Foo" {

@@ -1,8 +1,33 @@
 package afind
 
 import (
+	"fmt"
 	"path"
 )
+
+type ByteSize float64
+
+const (
+	_           = iota // ignore first value by assigning to blank identifier
+	KB ByteSize = 1 << (10 * iota)
+	MB
+	GB
+	TB
+)
+
+func (b ByteSize) String() string {
+	switch {
+	case b >= TB:
+		return fmt.Sprintf("%.2fTB", b/TB)
+	case b >= GB:
+		return fmt.Sprintf("%.2fGB", b/GB)
+	case b >= MB:
+		return fmt.Sprintf("%.2fMB", b/MB)
+	case b >= KB:
+		return fmt.Sprintf("%.2fKB", b/KB)
+	}
+	return fmt.Sprintf("%.2fB", b)
+}
 
 // A Repo represents a single indexed repository of source code.
 type Repo struct {
@@ -12,6 +37,8 @@ type Repo struct {
 	State    RepoState
 
 	RepoMeta
+
+	Dirs []string
 }
 
 type RepoState int
@@ -75,7 +102,7 @@ type RepoMeta struct {
 	NumDirs   int     // Number of directories indexed
 	NumFiles  int     // Number of files indexed
 	Elapsed   float64 // Wallclock indexing time in seconds
-	SizeIndex uint32  // Size of the source index file in bytes
+	SizeIndex uint32  // Size of the source index file in MB (10^6 bytes)
 	SizeData  int64   // Size of the data indexed by the Repo in bytes
 }
 

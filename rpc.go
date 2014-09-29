@@ -1,5 +1,9 @@
 package afind
 
+import (
+	"fmt"
+)
+
 func (self *RpcService) Search(req SearchRequest, resp *SearchResponse) error {
 	// resp.Files = make(map[string]map[string]map[string]string)
 	r, err := self.Searcher.Search(req)
@@ -15,6 +19,7 @@ func (self *RpcService) Index(req IndexRequest, response *IndexResponse) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("rpc index repos=", repos)
 	for k, v := range repos.Repos {
 		response.Repos[k] = v
 	}

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"code.google.com/p/codesearch/index"
-	"code.google.com/p/codesearch/regexp"
+	"github.com/andaru/codesearch/index"
+	"github.com/andaru/codesearch/regexp"
 	"github.com/golang/glog"
 )
 
@@ -138,15 +138,14 @@ func (s *grep) searchRepo(request *SearchRequest) (
 		}
 	}
 
-	// open the index file
+	// try to open the file for reading.
 	_, err = os.OpenFile(fname, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
 	if os.IsNotExist(err) || os.IsPermission(err) {
 		return
 	}
-	// If the file exists, that's cool, we don't report that
-	if os.IsExist(err) {
-		err = nil
-	}
+
+	// Error indication is clear, and can be reset.
+	err = nil
 
 	ix := index.Open(fname)
 	q := index.RegexpQuery(re.Syntax)
