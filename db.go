@@ -2,7 +2,6 @@ package afind
 
 import (
 	"bytes"
-	"fmt"
 	"sync"
 
 	"github.com/andaru/go-art"
@@ -42,7 +41,6 @@ func (d *db) Get(key string) interface{} {
 }
 
 func (d *db) get(key string) interface{} {
-	fmt.Printf("get key=%s\n", key)
 	if repo, ok := d.r[key]; !ok {
 		return nil
 	} else {
@@ -51,7 +49,6 @@ func (d *db) get(key string) interface{} {
 }
 
 func (d *db) Set(key string, value interface{}) error {
-	fmt.Printf("set key=%s v=%#v\n", key, value)
 	if value == nil {
 		return d.Delete(key)
 	}

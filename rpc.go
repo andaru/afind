@@ -14,12 +14,15 @@ func (self *RpcService) Search(req SearchRequest, resp *SearchResponse) error {
 }
 
 func (self *RpcService) Index(req IndexRequest, response *IndexResponse) error {
-	response.Repos = make(map[string]*Repo)
 	repos, err := self.Indexer.Index(req)
 	if err != nil {
 		return err
 	}
-	fmt.Println("rpc index repos=", repos)
+	if response.Repos == nil {
+		response.Repos = make(map[string]*Repo)
+	}
+
+	fmt.Printf("rpc index repos=%#v\n", repos)
 	for k, v := range repos.Repos {
 		response.Repos[k] = v
 	}

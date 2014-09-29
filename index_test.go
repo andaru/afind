@@ -62,18 +62,20 @@ func TestMakeIndex(t *testing.T) {
 	req.Dirs = []string{"."}
 	resp, err = makeIndex(req, file)
 
-	if err == nil {
-		t.Error("Expected error; got none")
-	}
 	if len(resp.Repos) != 1 {
 		t.Errorf("Want 1 repo, got %d repos", len(resp.Repos))
 	}
 	for _, resprepo := range resp.Repos {
+		// we indexed no files
+		if resprepo.SizeData != 0 {
+			t.Error("want 0 bytes data, got", resprepo.SizeData)
+		}
+		if resprepo.SizeIndex < 1 {
+			t.Error("want >0 bytes index")
+		}
 		if v, ok := resprepo.Meta["project"]; !ok || v != "Foo" {
 			t.Error("Didn't get meta back")
 		}
 		break
 	}
-	// todo: check stats
-	// t.Logf("resp: %#v", resp)
 }

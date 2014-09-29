@@ -11,15 +11,16 @@ import (
 
 // Test outside of the RPC framework
 func TestRpcIndexFunction(t *testing.T) {
-	ir := newIndexRequest("key",
-		"./testdata/repo1/", []string{"."})
+	key := "key"
+	ir := newIndexRequest(key, "./testdata/repo1/", []string{"."})
 
-	resp := newIndexResponse()
 	repos := newDb()
 	svc := newService(repos)
 	rpcsvc := newRpcService(svc)
 	svr := rpc.NewServer()
 	svr.RegisterName("Afind", rpcsvc)
+
+	resp := newIndexResponse()
 	err := rpcsvc.Index(ir, resp)
 
 	if err != nil {
@@ -28,8 +29,10 @@ func TestRpcIndexFunction(t *testing.T) {
 	if len(resp.Repos) != 1 {
 		t.Error("got", len(resp.Repos), "repos, want 1")
 	}
-	t.Logf("repos before bad key get: %#v", resp.Repos)
-	repo := resp.Repos["key"]
+
+	// there was one dir, so only use one shard
+	repo := resp.Repos[key+"_000"]
+
 	if repo.SizeData < 1 {
 		t.Error("got zero size data")
 	}
@@ -64,8 +67,8 @@ func TestRpcIndexWithServer(t *testing.T) {
 	}
 	args := newIndexRequest("key",
 		"./testdata/repo1/", []string{"."})
-	var reply IndexResponse
-	err = client.Call("Afind.Index", args, &reply)
+	reply := newIndexResponse()
+	err = client.Call("Afind.Index", args, reply)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
@@ -106,14 +109,14 @@ func TestGetRepo(t *testing.T) {
 
 	seen := make(map[string]bool)
 	var repos Repos
-	keys := newKeys("key1", "key2")
+	keys := newKeys("key1_000", "key2_000")
 	err = rpcsvc.GetRepos(keys, &repos)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
 	for k, v := range repos.Repos {
-		if !strings.Contains(v.UriIndex, "/ix_key") {
-			t.Error("index key", k, " want 'ix_key' in UriIndex, got",
+		if !strings.HasSuffix(v.UriIndex, ".afindex") {
+			t.Error("index key", k, " want '.afindex' in UriIndex, got",
 				v.UriIndex)
 		} else {
 			seen[k] = true
@@ -168,8 +171,8 @@ func TestGetAllRepos(t *testing.T) {
 	}
 	seen := make(map[string]bool)
 	for k, v := range repos.Repos {
-		if !strings.Contains(v.UriIndex, "/ix_key") {
-			t.Error("index key", k, " want 'ix_key' in UriIndex, got",
+		if !strings.HasSuffix(v.UriIndex, ".afindex") {
+			t.Error("index key", k, " want '.afindex' in UriIndex, got",
 				v.UriIndex)
 		} else {
 			seen[k] = true
@@ -196,14 +199,13 @@ func TestReindexFailure(t *testing.T) {
 	err := rpcsvc.Index(ir, resp)
 	if err != nil {
 		t.Error("unexpected error:", err)
-	} else {
-		err = rpcsvc.Index(ir2, resp2)
-		if err == nil {
-			t.Error("expected an error")
-		}
-		if !strings.Contains(err.Error(), "reindex errored repos") {
-			t.Error("error message [", err.Error(), "] was unexpected")
-		}
+	}
+	err = rpcsvc.Index(ir2, resp2)
+	if err == nil {
+		t.Error("expected an error")
+	}
+	if !strings.Contains(err.Error(), "with this key is already") {
+		t.Error("error message [", err.Error(), "] was unexpected")
 	}
 }
 

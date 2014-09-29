@@ -13,6 +13,10 @@ import (
 	"github.com/golang/glog"
 )
 
+const (
+	TimeoutIndex = 5 * time.Minute
+)
+
 type indexer struct {
 	repos KeyValueStorer
 }
@@ -37,7 +41,9 @@ func tryCreate(fname string) (*os.File, error) {
 
 func mergeIndexResponse(in *IndexResponse, out *IndexResponse) {
 	for key, repo := range in.Repos {
-		out.Repos[key] = repo
+		if repo != nil {
+			out.Repos[key] = repo
+		}
 	}
 }
 
@@ -54,12 +60,10 @@ func reposForPrefix(key string, repos KeyValueStorer) []*Repo {
 	return results
 }
 
-func repoIndexable(key string, repos KeyValueStorer) (indexable, newRepo bool) {
+func repoIndexable(key string, repos KeyValueStorer) (indexable bool) {
 	indexable = true
-	newRepo = true
 	repos.ForEachSuffix(key, func(k string, v interface{}) bool {
 		if r, ok := v.(*Repo); ok {
-			newRepo = false
 			if r.State < ERROR {
 				indexable = false
 				return false
@@ -84,41 +88,60 @@ func getIndexFilename(request *IndexRequest) string {
 	return path.Join(tmpPath, fn)
 }
 
+// unions for the indexing functions
+type irPlusFile struct {
+	r *IndexRequest
+	f *os.File
+}
+
+type respPlusErr struct {
+	r *IndexResponse
+	e error
+}
+
 func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
-	indexable, newRepo := repoIndexable(request.Key, i.repos)
-	if !indexable || !newRepo {
+	if !repoIndexable(request.Key, i.repos) {
 		return nil, NewIndexAvailableError()
 	}
 
-	type irPlusFile struct {
-		r *IndexRequest
-		f *os.File
-	}
-
-	var requests []irPlusFile
+	var requests []*irPlusFile
 	resp = newIndexResponse()
 
 	for _, r := range shardIndexRequest(request) {
-		if f, nerr := tryCreate(getIndexFilename(&request)); nerr == nil {
-			requests = append(requests, irPlusFile{r, f})
+		if f, e := tryCreate(getIndexFilename(&request)); e == nil {
+			requests = append(requests, &irPlusFile{r, f})
+		} else {
+			fmt.Errorf("could not create index: %s\n", e)
 		}
 	}
 
-	// Perform indexing
+	fmt.Printf("shards=%#v\n", requests)
+	// Perform indexing concurrently
+	ch := make(chan *respPlusErr)
+	total := 0
+
 	for _, r := range requests {
-		in, nerr := makeIndex(*r.r, r.f)
-		if v, ok := in.Repos[r.r.Key]; ok {
-			copy(v.Dirs, r.r.Dirs)
-		}
-		mergeIndexResponse(in, resp)
-		if nerr != nil {
-			err = nerr
+		total++
+		go func(req *irPlusFile) {
+			in, e := makeIndex(*req.r, req.f)
+			fmt.Printf("in: %#v\n", in)
+			ch <- &respPlusErr{in, e}
+		}(r)
+	}
+	// Await concurrent results
+	for total > 0 {
+		select {
+		case <-time.After(TimeoutIndex):
+			break
+		case in := <-ch:
+			if in.e == nil {
+				mergeIndexResponse(in.r, resp)
+			}
+			total--
 		}
 	}
-
 	// Update the database with the repos indexed
 	for key, repo := range resp.Repos {
-		fmt.Printf("setting key=%v value=%#v\n", key, repo)
 		err = i.repos.Set(key, repo)
 	}
 	return
@@ -137,6 +160,8 @@ func shardIndexRequest(request IndexRequest) []*IndexRequest {
 
 func makeIndex(request IndexRequest, outf *os.File) (resp *IndexResponse, err error) {
 	var reg *regexp.Regexp
+
+	fmt.Printf("makeIndex request=%#v\n", request)
 
 	if request.Key == "" {
 		return nil, errors.New("request Key must be supplied")
@@ -163,6 +188,7 @@ func makeIndex(request IndexRequest, outf *os.File) (resp *IndexResponse, err er
 
 	// Create the index, add paths and then files by walking those paths
 	fname := outf.Name()
+	fmt.Printf("creating index [%v] at %v %v\n", repo.Key, fname, paths)
 	glog.Infof("creating index [%v] at %v %v", repo.Key, fname, paths)
 	ix := index.Create(fname)
 	ix.AddPaths(paths)
@@ -182,9 +208,11 @@ func makeIndex(request IndexRequest, outf *os.File) (resp *IndexResponse, err er
 		repo.State = ERROR
 	}
 	resp.Repos[repo.Key] = repo
+	fmt.Printf("created index [%v] %v (%d bytes in %.4fs) %#v\n",
+		repo.Key, repo.UriIndex, repo.SizeIndex, repo.Elapsed, resp.Repos)
 	glog.Infof("created index [%v] %v (%d bytes in %.4fs)",
 		repo.Key, repo.UriIndex, repo.SizeIndex, repo.Elapsed)
-	return
+	return resp, err
 }
 
 const (
@@ -217,7 +245,7 @@ func pathwalk(request IndexRequest, paths []string, reg *regexp.Regexp,
 	ix *index.IndexWriter) (files, dirs int, err error) {
 
 	for _, path := range paths {
-		filepath.Walk(path,
+		_ = filepath.Walk(path,
 			func(path string, info os.FileInfo, werr error) error {
 				if info == nil {
 					return nil
