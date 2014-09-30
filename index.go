@@ -80,14 +80,6 @@ const (
 	tmpPath = "/tmp"
 )
 
-func getIndexFilename(request *IndexRequest) string {
-	fn := request.Key + ".afindex"
-	if config.IndexInRepo {
-		return path.Join(request.Root, tmpPath, fn)
-	}
-	return path.Join(tmpPath, fn)
-}
-
 // unions for the indexing functions
 type irPlusFile struct {
 	r *IndexRequest
@@ -108,14 +100,17 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	resp = newIndexResponse()
 
 	for _, r := range shardIndexRequest(request) {
-		if f, e := tryCreate(getIndexFilename(&request)); e == nil {
-			requests = append(requests, &irPlusFile{r, f})
+		if f, e := tryCreate(r.UriIndex()); e == nil {
+			irpf := &irPlusFile{r, f}
+			requests = append(requests, irpf)
 		} else {
-			fmt.Errorf("could not create index: %s\n", e)
+			fmt.Errorf("could not create index: %s", e)
+			return
 		}
 	}
-
-	fmt.Printf("shards=%#v\n", requests)
+	if glog.V(6) {
+		glog.V(6).Info("sharded requests %#v", requests)
+	}
 	// Perform indexing concurrently
 	ch := make(chan *respPlusErr)
 	total := 0
@@ -124,7 +119,6 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 		total++
 		go func(req *irPlusFile) {
 			in, e := makeIndex(*req.r, req.f)
-			fmt.Printf("in: %#v\n", in)
 			ch <- &respPlusErr{in, e}
 		}(r)
 	}
@@ -134,9 +128,10 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 		case <-time.After(TimeoutIndex):
 			break
 		case in := <-ch:
-			if in.e == nil {
-				mergeIndexResponse(in.r, resp)
+			if in.e != nil {
+				err = in.e
 			}
+			mergeIndexResponse(in.r, resp)
 			total--
 		}
 	}
@@ -160,8 +155,6 @@ func shardIndexRequest(request IndexRequest) []*IndexRequest {
 
 func makeIndex(request IndexRequest, outf *os.File) (resp *IndexResponse, err error) {
 	var reg *regexp.Regexp
-
-	fmt.Printf("makeIndex request=%#v\n", request)
 
 	if request.Key == "" {
 		return nil, errors.New("request Key must be supplied")
@@ -188,7 +181,6 @@ func makeIndex(request IndexRequest, outf *os.File) (resp *IndexResponse, err er
 
 	// Create the index, add paths and then files by walking those paths
 	fname := outf.Name()
-	fmt.Printf("creating index [%v] at %v %v\n", repo.Key, fname, paths)
 	glog.Infof("creating index [%v] at %v %v", repo.Key, fname, paths)
 	ix := index.Create(fname)
 	ix.AddPaths(paths)
@@ -208,10 +200,8 @@ func makeIndex(request IndexRequest, outf *os.File) (resp *IndexResponse, err er
 		repo.State = ERROR
 	}
 	resp.Repos[repo.Key] = repo
-	fmt.Printf("created index [%v] %v (%d bytes in %.4fs) %#v\n",
-		repo.Key, repo.UriIndex, repo.SizeIndex, repo.Elapsed, resp.Repos)
-	glog.Infof("created index [%v] %v (%d bytes in %.4fs)",
-		repo.Key, repo.UriIndex, repo.SizeIndex, repo.Elapsed)
+	glog.Infof("created index [%v] %v (%d/%d bytes in %.4fs)",
+		repo.Key, repo.UriIndex, repo.SizeIndex, repo.SizeData, repo.Elapsed)
 	return resp, err
 }
 

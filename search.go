@@ -40,16 +40,23 @@ func merge(in *SearchRepoResponse, out *SearchResponse) {
 func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	var err error
 	sr := newSearchResponse()
+	glog.Infof("SEARCH %v", request)
 
 	start := time.Now()
 
 	repos := make(map[string]*Repo)
 	for _, key := range request.RepoKeys {
-		r := s.repos.Get(key)
-		if r != nil {
-			repos[key] = r.(*Repo)
+		rs := s.repos.GetPrefix(key)
+		if rs != nil {
+			for _, r := range rs {
+				repo := r.(*Repo)
+				repos[repo.Key] = repo
+			}
 		}
 	}
+
+	glog.Infof("Searching %d repos %v", len(repos), repos)
+
 	if len(repos) == 0 {
 		// Search all repos
 		s.repos.ForEach(func(key string, value interface{}) bool {
@@ -58,32 +65,33 @@ func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 		})
 	}
 
-	// Search specific repos concurrently
-	if len(repos) > 0 {
-		doneCh := make(chan *SearchRepoResponse)
+	if len(repos) == 0 {
+		return nil, errors.New("no repos")
+	}
 
-		count := 0
-		for _, repo := range repos {
-			count++
-			go func() {
-				newSr := newSearchRepoResponse()
-				newSr, err = s.searchOne(repo, request)
-				doneCh <- newSr
-			}()
-		}
-		timeout := time.After(30 * time.Second)
-		rcount := 0
+	// Search specific repos concurrently
+	ch := make(chan *SearchRepoResponse)
+	total := 0
+	for _, repo := range repos {
+		total++
+		go func(r *Repo) {
+			newSr := newSearchRepoResponse()
+			newSr, err = s.searchOne(r, request)
+			ch <- newSr
+		}(repo)
+	}
+	timeout := time.After(30 * time.Second)
+	for total > 0 {
 		select {
-		case newSr := <-doneCh:
-			rcount++
-			merge(newSr, sr)
 		case <-timeout:
 			break
+		case newSr := <-ch:
+			merge(newSr, sr)
+			total--
 		}
-		sr.ElapsedNs = time.Since(start).Nanoseconds()
-		return sr, err
 	}
-	return nil, errors.New("no repos")
+	sr.ElapsedNs = time.Since(start).Nanoseconds()
+	return sr, err
 }
 
 func (s *searcher) searchOne(repo *Repo, request SearchRequest) (

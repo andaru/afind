@@ -17,15 +17,13 @@ func TestRpcIndexFunction(t *testing.T) {
 	repos := newDb()
 	svc := newService(repos)
 	rpcsvc := newRpcService(svc)
-	svr := rpc.NewServer()
-	svr.RegisterName("Afind", rpcsvc)
-
 	resp := newIndexResponse()
 	err := rpcsvc.Index(ir, resp)
 
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
+
 	if len(resp.Repos) != 1 {
 		t.Error("got", len(resp.Repos), "repos, want 1")
 	}
@@ -43,7 +41,7 @@ func TestRpcIndexFunction(t *testing.T) {
 		t.Error("got", repo.NumDirs, "dirs, want 3")
 	}
 	if repo.NumFiles != 3 {
-		t.Error("got", repo.NumDirs, "dirs, want 3")
+		t.Error("got", repo.NumFiles, "files, want 3")
 	}
 }
 
@@ -67,8 +65,10 @@ func TestRpcIndexWithServer(t *testing.T) {
 	}
 	args := newIndexRequest("key",
 		"./testdata/repo1/", []string{"."})
-	reply := newIndexResponse()
-	err = client.Call("Afind.Index", args, reply)
+
+	reply := IndexResponse{Repos: make(map[string]*Repo)}
+
+	err = client.Call("Afind.Index", args, &reply)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
@@ -109,7 +109,7 @@ func TestGetRepo(t *testing.T) {
 
 	seen := make(map[string]bool)
 	var repos Repos
-	keys := newKeys("key1_000", "key2_000")
+	keys := []string{"key1_000", "key2_000"}
 	err = rpcsvc.GetRepos(keys, &repos)
 	if err != nil {
 		t.Error("unexpected error:", err)

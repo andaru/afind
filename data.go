@@ -94,7 +94,11 @@ type IndexRequest struct {
 }
 
 func (req *IndexRequest) UriIndex() string {
-	return path.Join(config.IndexRoot, "ix_"+req.Key+".afindex")
+	fn := req.Key + ".afindex"
+	if config.IndexInRepo {
+		return path.Join(req.Root, fn)
+	}
+	return path.Join(tmpPath, fn)
 }
 
 // Indexing statistics for a repo. Generated during Index() calls.

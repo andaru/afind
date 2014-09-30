@@ -43,6 +43,10 @@ func getTempDirWithFile(testname string) (dir string, f *os.File, err error) {
 	return
 }
 
+func getTempDir(testname string) (dir string, err error) {
+	return ioutil.TempDir("/tmp", "test.afind")
+}
+
 func TestMakeIndex(t *testing.T) {
 	req := IndexRequest{Meta: map[string]string{"project": "Foo"}}
 	var resp *IndexResponse
