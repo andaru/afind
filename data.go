@@ -1,8 +1,11 @@
 package afind
 
 import (
+	"errors"
 	"fmt"
 	"path"
+	"path/filepath"
+	"strings"
 )
 
 type ByteSize float64
@@ -31,14 +34,26 @@ func (b ByteSize) String() string {
 
 // A Repo represents a single indexed repository of source code.
 type Repo struct {
-	Key      string            // Unique key
-	UriIndex string            // URI of Repo's index
-	Meta     map[string]string // User configurable metadata for this Repo
-	State    RepoState
+	Key       string            // Unique key
+	IndexPath string            // Path to the .afindex file covering this Repo
+	Meta      map[string]string // User configurable metadata for this Repo
+	State     RepoState
 
-	RepoMeta
+	// If >0, NumShards shard files $IndexPath.{1..$N} are created
+	NumShards int
 
 	Dirs []string
+
+	RepoMeta // additional metadata about the repo
+}
+
+// Indexing statistics for a repo. Generated during Index() calls.
+type RepoMeta struct {
+	NumDirs   int     // Number of directories indexed
+	NumFiles  int     // Number of files indexed
+	Elapsed   float64 // Approximate wallclock indexing time in seconds
+	SizeIndex uint32  // Size of the source index file in MB (10^6 bytes)
+	SizeData  int64   // Size of the data indexed by the Repo in bytes
 }
 
 type RepoState int
@@ -53,9 +68,9 @@ const (
 
 func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 	r := &Repo{
-		Key:      key,
-		UriIndex: uriIndex,
-		Meta:     make(map[string]string),
+		Key:       key,
+		IndexPath: uriIndex,
+		Meta:      make(map[string]string),
 	}
 	for k, v := range meta {
 		r.Meta[k] = v
@@ -63,8 +78,70 @@ func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 	return r
 }
 
-func newRepoFromIndexRequest(request IndexRequest) *Repo {
-	return newRepo(request.Key, request.UriIndex(), request.Meta)
+const (
+	indexPathSuffix = ".afindex"
+)
+
+func getShardRequestKey(i int, r *IndexRequest) string {
+	return fmt.Sprintf("%s_%02d", r.Key, i)
+}
+
+func getIndexPath(i int, r *IndexRequest) string {
+	var prefix string
+
+	if config.IndexInRepo {
+		prefix = r.Root
+	} else {
+		prefix = config.IndexRoot
+	}
+	// Try to make the path absolute
+	if absprefix, err := filepath.Abs(prefix); err == nil {
+		prefix = absprefix
+	} else {
+		log.Error("Failed to absolute path:", prefix)
+	}
+	return fmt.Sprintf("%s.%s",
+		path.Join(prefix, getShardRequestKey(i, r)), indexPathSuffix)
+}
+
+// Command line 'flag' types used by both afind (CLI tool) and afindd
+// (daemon)
+
+// Slice of strings flag
+type FlagStringSlice []string
+
+func (ss *FlagStringSlice) String() string {
+	return fmt.Sprint(*ss)
+}
+
+func (ss *FlagStringSlice) Set(value string) error {
+	for _, v := range strings.Split(value, ",") {
+		*ss = append(*ss, v)
+	}
+	return nil
+}
+
+func (ss *FlagStringSlice) AsSliceOfString() []string {
+	return *ss
+}
+
+// String/string map flag
+// This is used for user defined repo metadata by afind and afindd
+type FlagSSMap map[string]string
+
+// Returns a go default formatted form of the metadata map flag
+func (ssmap *FlagSSMap) String() string {
+	return fmt.Sprint(*ssmap)
+}
+
+func (ssmap *FlagSSMap) Set(value string) error {
+	kv := strings.Split(value, "=")
+	if len(kv) != 2 {
+		return errors.New("Argument must be in the form 'key=value'")
+	}
+	s := *ssmap
+	s[kv[0]] = kv[1]
+	return nil
 }
 
 // A Searcher defines the front-end search interface.
@@ -91,23 +168,6 @@ type IndexRequest struct {
 	Root string
 	Dirs []string
 	Meta map[string]string // metadata applied to all new repos
-}
-
-func (req *IndexRequest) UriIndex() string {
-	fn := req.Key + ".afindex"
-	if config.IndexInRepo {
-		return path.Join(req.Root, fn)
-	}
-	return path.Join(tmpPath, fn)
-}
-
-// Indexing statistics for a repo. Generated during Index() calls.
-type RepoMeta struct {
-	NumDirs   int     // Number of directories indexed
-	NumFiles  int     // Number of files indexed
-	Elapsed   float64 // Wallclock indexing time in seconds
-	SizeIndex uint32  // Size of the source index file in MB (10^6 bytes)
-	SizeData  int64   // Size of the data indexed by the Repo in bytes
 }
 
 // The union of the Repo and RepoMeta types.

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/andaru/codesearch/index"
-	"github.com/golang/glog"
 )
 
 const (
@@ -18,11 +17,12 @@ const (
 )
 
 type indexer struct {
-	repos KeyValueStorer
+	repos   KeyValueStorer
+	nshards int
 }
 
 func newIndexer(repos KeyValueStorer) *indexer {
-	return &indexer{repos}
+	return &indexer{repos, config.NumShards}
 }
 
 func tryCreate(fname string) (*os.File, error) {
@@ -76,10 +76,6 @@ func repoIndexable(key string, repos KeyValueStorer) (indexable bool) {
 	return
 }
 
-const (
-	tmpPath = "/tmp"
-)
-
 // unions for the indexing functions
 type irPlusFile struct {
 	r *IndexRequest
@@ -91,26 +87,56 @@ type respPlusErr struct {
 	e error
 }
 
+type indexWriter struct {
+	ix []*index.IndexWriter
+	repo   []*Repo
+}
+
+func getIndexWriter(max int, request *IndexRequest) repoPlusWriter {
+	iw := &indexWriter{
+		ix: make([]*index.IndexWriter, 0),
+		repo: make([]*Repo, 0),
+	}
+	for int i := 0; i < max; i++ {
+		path := getIndexPath(i, request)
+		iw.ix[i] = index.Create(path)
+	}
+	log.Debug("creating index file %s", path)
+	writer := index.Create(path)
+	shardKey := getShardRequestKey(i, request)
+	return repoPlusWriter{writer, newRepo(shardKey, path, request.Meta)}
+}
+
 func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	if !repoIndexable(request.Key, i.repos) {
 		return nil, NewIndexAvailableError()
 	}
 
-	var requests []*irPlusFile
 	resp = newIndexResponse()
+	ixs := make([]repoPlusWriter, config.NumShards)
+	for i := 0; i < config.NumShards; i++ {
+		ixs[i] = getRepoWriter(i, &request)
+	}
 
-	for _, r := range shardIndexRequest(request) {
-		if f, e := tryCreate(r.UriIndex()); e == nil {
-			irpf := &irPlusFile{r, f}
-			requests = append(requests, irpf)
-		} else {
-			fmt.Errorf("could not create index: %s", e)
-			return
+	// Buidl the master path list
+	paths := make([]string, 0)
+	for _, p := range request.Dirs {
+		if p != "" && !path.IsAbs(p) {
+			paths = append(paths, path.Join(rootPath, p))
 		}
 	}
-	if glog.V(6) {
-		glog.V(6).Info("sharded requests %#v", requests)
-	}
+
+	// for _, r := range shardIndexRequest(request) {
+
+	// 	if f, e := tryCreate(r.UriIndex()); e == nil {
+	// 		irpf := &irPlusFile{r, f}
+	// 		requests = append(requests, irpf)
+	// 	} else {
+	// 		log.Error("Error creating %s: %v", r.UriIndex(), e)
+	// 		return
+	// 	}
+	// }
+	// log.Debug("sharded request into %d", len(requests))
 	// Perform indexing concurrently
 	ch := make(chan *respPlusErr)
 	total := 0
@@ -143,7 +169,7 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 }
 
 func shardIndexRequest(request IndexRequest) []*IndexRequest {
-	shards := getShards(request.Dirs, maxShards)
+	shards := getShards(request.Dirs, config.NumShards)
 	requestShards := make([]*IndexRequest, len(shards))
 	for i := range shards {
 		req := newIndexRequest(
@@ -153,20 +179,21 @@ func shardIndexRequest(request IndexRequest) []*IndexRequest {
 	return requestShards
 }
 
+type repoResp struct {
+	sizeData  int64
+	sizeIndex int
+	numFiles  int
+	numDirs   int
+}
+
 func makeIndex(request IndexRequest, outf *os.File) (resp *IndexResponse, err error) {
-	var reg *regexp.Regexp
+	log.Debug("makeIndex indexFile=%s request=%#v", outf.Name(), request)
 
 	if request.Key == "" {
 		return nil, errors.New("request Key must be supplied")
 	}
 
-	if config.Noindex != "" {
-		reg, err = regexp.Compile(config.Noindex)
-		if err != nil {
-			return nil, err
-		}
-	}
-
+	reg := config.NoIndex()
 	start := time.Now()
 	repo := newRepoFromIndexRequest(request)
 	resp = newIndexResponse()
@@ -181,9 +208,10 @@ func makeIndex(request IndexRequest, outf *os.File) (resp *IndexResponse, err er
 
 	// Create the index, add paths and then files by walking those paths
 	fname := outf.Name()
-	glog.Infof("creating index [%v] at %v %v", repo.Key, fname, paths)
+	log.Info("creating index [%v] at %v %v", repo.Key, fname, paths)
 	ix := index.Create(fname)
 	ix.AddPaths(paths)
+
 	files, dirs, err := pathwalk(request, paths, reg, ix)
 	ix.Flush()
 	// todo: re-add merge, and add panic recovery from index.Merge panic
@@ -200,7 +228,7 @@ func makeIndex(request IndexRequest, outf *os.File) (resp *IndexResponse, err er
 		repo.State = ERROR
 	}
 	resp.Repos[repo.Key] = repo
-	glog.Infof("created index [%v] %v (%d/%d bytes in %.4fs)",
+	log.Info("created index [%v] %v (%d/%d bytes in %.4fs)",
 		repo.Key, repo.UriIndex, repo.SizeIndex, repo.SizeData, repo.Elapsed)
 	return resp, err
 }
@@ -216,26 +244,14 @@ func min(x, y int) int {
 	return y
 }
 
-func getShards(paths []string, maxShards int) map[int][]string {
-	nshards := min(maxShards, len(paths))
-	shards := make(map[int][]string, nshards)
-	for k := 0; k < nshards; k++ {
-		shards[k] = make([]string, 0)
-	}
-	for i, path := range paths {
-		snum := i % nshards
-		shard := shards[snum]
-		shard = append(shard, path)
-		shards[snum] = shard
-	}
-	return shards
-}
+func pathwalk(request IndexRequest,
+	numShards int, paths []string, reg *regexp.Regexp,
+	ixs *[]*index.IndexWriter) (files, dirs int, err error) {
 
-func pathwalk(request IndexRequest, paths []string, reg *regexp.Regexp,
-	ix *index.IndexWriter) (files, dirs int, err error) {
+	var lasterr error
 
 	for _, path := range paths {
-		_ = filepath.Walk(path,
+		lasterr = filepath.Walk(path,
 			func(path string, info os.FileInfo, werr error) error {
 				if info == nil {
 					return nil
@@ -257,12 +273,14 @@ func pathwalk(request IndexRequest, paths []string, reg *regexp.Regexp,
 				}
 				if info.Mode()&os.ModeType == 0 {
 					// TODO: handle archives
+					slotnum := count % numShards
 					ix.AddFile(path)
 					files++
 					// TODO: count errors
 				}
 				return nil
 			})
+		err = lasterr
 	}
 	return
 }

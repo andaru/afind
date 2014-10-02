@@ -46,13 +46,7 @@ func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 
 	repos := make(map[string]*Repo)
 	for _, key := range request.RepoKeys {
-		rs := s.repos.GetPrefix(key)
-		if rs != nil {
-			for _, r := range rs {
-				repo := r.(*Repo)
-				repos[repo.Key] = repo
-			}
-		}
+		s.repos.ForEachSuffix(key, getSearchIterFunc(&repos))
 	}
 
 	glog.Infof("Searching %d repos %v", len(repos), repos)

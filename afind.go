@@ -6,7 +6,6 @@ import (
 	"net/rpc"
 
 	"github.com/gocraft/web"
-	"github.com/golang/glog"
 )
 
 // This file composes the different system parts (defined as
@@ -24,7 +23,7 @@ type Service struct {
 }
 
 func newService(repos KeyValueStorer) *Service {
-	return &Service{repos, indexer{repos}, searcher{repos}}
+	return &Service{repos, indexer{repos, config.NumShards}, searcher{repos}}
 }
 
 // The Afind system
@@ -72,13 +71,13 @@ func (s *System) Start() error {
 }
 
 func (s *System) startHttpServer() error {
-	if config.BindFlag == "" {
+	if config.HttpBind == "" {
 		return nil
 	}
 	app := web.New(s)
 	app.Get("/repos/:key", GetRepo)
 	app.Post("/repos/:key", PostRepo)
-	http.ListenAndServe(config.BindFlag, app)
+	go http.ListenAndServe(config.HttpBind, app)
 	return nil
 }
 
@@ -90,8 +89,9 @@ func (s *System) setupRpcServer() {
 	svc := newService(s.repos)
 	rpcsvc := newRpcService(svc)
 	s.rpcServer = rpc.NewServer()
-	// Register a unified RPC interface serving all functions
-	s.rpcServer.RegisterName("Afind", rpcsvc)
+	if err := s.rpcServer.RegisterName("Afind", rpcsvc); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (s *System) startRpcServer() error {
@@ -99,9 +99,9 @@ func (s *System) startRpcServer() error {
 		panic("RPC server not initialized")
 	}
 
-	l, err := net.Listen("tcp", config.RpcBindFlag)
+	l, err := net.Listen("tcp", config.RpcBind)
 	if err == nil {
-		glog.Info("Starting RPC server on", config.RpcBindFlag)
+		log.Info("rpc server started, bound to '%s'", config.RpcBind)
 		go s.rpcServer.Accept(l)
 	} else {
 		s.rpcServer = nil

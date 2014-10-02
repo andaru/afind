@@ -2,19 +2,14 @@ package afind
 
 import (
 	"path/filepath"
-	"runtime"
+
+	"github.com/op/go-logging"
 )
 
-// Returns the calling function's name
-func FN() string {
-	return FNn(2)
-}
-
-// Returns the function N stack frames from here's name
-func FNn(n int) string {
-	pc, _, _, _ := runtime.Caller(n)
-	return runtime.FuncForPC(pc).Name()
-}
+// the logging handle for the afind package
+var (
+	log = logging.MustGetLogger("afind")
+)
 
 func normalizeUri(uri string) (string, error) {
 	// todo: handle schemes, these are local filesystem paths only

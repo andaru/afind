@@ -1,7 +1,6 @@
 package afind
 
 import (
-	"log"
 	"net"
 	"net/rpc"
 	"strings"
@@ -79,17 +78,9 @@ func TestRpcIndexWithServer(t *testing.T) {
 
 // Test Index and GetRepo (includes SetRepo calls from Index)
 func TestGetRepo(t *testing.T) {
-	addr := ":12345"
 	rs := newDb()
 	svc := newService(rs)
 	rpcsvc := newRpcService(svc)
-	svr := rpc.NewServer()
-	svr.RegisterName("Afind", rpcsvc)
-	l, e := net.Listen("tcp", addr)
-	if e != nil {
-		log.Fatal("listen error:", e)
-	}
-	go svr.Accept(l)
 
 	ir := newIndexRequest("key1",
 		"./testdata/repo1/", []string{"dir1"})
@@ -127,63 +118,6 @@ func TestGetRepo(t *testing.T) {
 	}
 }
 
-// Test Index and GetRepo (includes SetRepo calls from Index)
-func TestGetAllRepos(t *testing.T) {
-	addr := ":30303"
-	rs := newDb()
-	svc := newService(rs)
-	rpcsvc := newRpcService(svc)
-	svr := rpc.NewServer()
-	svr.RegisterName("Afind", rpcsvc)
-	l, e := net.Listen("tcp", addr)
-	if e != nil {
-		log.Fatal("listen error:", e)
-	}
-	go svr.Accept(l)
-
-	ir := newIndexRequest("key1",
-		"./testdata/repo1/", []string{"dir1"})
-	ir2 := newIndexRequest("key2",
-		"./testdata/repo1/", []string{"dir2"})
-	ir3 := newIndexRequest("key3",
-		"./testdata/repo1/", []string{"."})
-
-	indexresp := newIndexResponse()
-	indexresp2 := newIndexResponse()
-	indexresp3 := newIndexResponse()
-	err := rpcsvc.Index(ir, indexresp)
-	if err != nil {
-		t.Error("unexpected error:", err)
-	}
-	err = rpcsvc.Index(ir2, indexresp2)
-	if err != nil {
-		t.Error("unexpected error:", err)
-	}
-	err = rpcsvc.Index(ir3, indexresp3)
-	if err != nil {
-		t.Error("unexpected error:", err)
-	}
-
-	var repos Repos
-	err = rpcsvc.GetAllRepos(true, &repos)
-	if len(repos.Repos) != 3 {
-		t.Error("got", len(repos.Repos), "repos, want 3")
-	}
-	seen := make(map[string]bool)
-	for k, v := range repos.Repos {
-		if !strings.HasSuffix(v.UriIndex, ".afindex") {
-			t.Error("index key", k, " want '.afindex' in UriIndex, got",
-				v.UriIndex)
-		} else {
-			seen[k] = true
-		}
-	}
-	if len(seen) != 3 {
-		t.Error("got", len(seen), "repos, want 2")
-	}
-}
-
-// Test Index and GetRepo (includes SetRepo calls from Index)
 func TestReindexFailure(t *testing.T) {
 	rs := newDb()
 	svc := newService(rs)
@@ -233,5 +167,112 @@ func TestRpcSearch(t *testing.T) {
 	}
 	if sresp.NumLinesMatched != 1 {
 		t.Error("expected 1 line match, got", sresp.NumLinesMatched)
+	}
+}
+
+// Test Index and GetRepo (includes SetRepo calls from Index)
+func TestGetAllRepos(t *testing.T) {
+	svc := newService(newDb())
+	rpcsvc := newRpcService(svc)
+
+	ir := newIndexRequest("key1",
+		"./testdata/repo1/", []string{"dir1"})
+	ir2 := newIndexRequest("key2",
+		"./testdata/repo1/", []string{"dir2"})
+	ir3 := newIndexRequest("key3",
+		"./testdata/repo1/", []string{"."})
+
+	indexresp := newIndexResponse()
+	indexresp2 := newIndexResponse()
+	indexresp3 := newIndexResponse()
+	err := rpcsvc.Index(ir, indexresp)
+	if err != nil {
+		t.Error("unexpected error:", err)
+	}
+	err = rpcsvc.Index(ir2, indexresp2)
+	if err != nil {
+		t.Error("unexpected error:", err)
+	}
+	err = rpcsvc.Index(ir3, indexresp3)
+	if err != nil {
+		t.Error("unexpected error:", err)
+	}
+
+	var repos Repos
+	err = rpcsvc.GetAllRepos(true, &repos)
+	if len(repos.Repos) != 3 {
+		t.Error("got", len(repos.Repos), "repos, want 3")
+	}
+	seen := make(map[string]bool)
+	for k, v := range repos.Repos {
+		if !strings.HasSuffix(v.UriIndex, ".afindex") {
+			t.Error("index key", k, " want '.afindex' in UriIndex, got",
+				v.UriIndex)
+		} else {
+			seen[k] = true
+		}
+	}
+	if len(seen) != 3 {
+		t.Error("got", len(seen), "repos, want 2")
+	}
+}
+
+/// Test indexing via the actual rpc server
+func TestGetPrefixRepos(t *testing.T) {
+	addr := ":30303"
+	rs := newDb()
+	svc := newService(rs)
+	rpcsvc := newRpcService(svc)
+	svr := rpc.NewServer()
+	svr.RegisterName("Afind", rpcsvc)
+	l, e := net.Listen("tcp", addr)
+	if e != nil {
+		log.Fatal("listen error:", e)
+	}
+	go svr.Accept(l)
+
+	ir := newIndexRequest("key1",
+		"./testdata/repo1/", []string{"dir1"})
+	ir2 := newIndexRequest("key2",
+		"./testdata/repo1/", []string{"dir2"})
+	ir3 := newIndexRequest("key3",
+		"./testdata/repo1/", []string{"."})
+
+	client, cerr := NewRpcClient(addr)
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
+
+	client.Index(ir)
+	client.Index(ir2)
+	client.Index(ir3)
+
+	repos, err := client.GetPrefixRepos("key")
+	if err != nil {
+		t.Error("unexpected error:", err)
+	}
+
+	length := len(repos.Repos)
+	size := rs.Size()
+
+	if length != size {
+		t.Error(length, "!=", size)
+	}
+
+	if len(repos.Repos) != 3 {
+		t.Error("got", len(repos.Repos), "repos, want 3")
+	}
+
+	seen := make(map[string]bool)
+	for k, v := range repos.Repos {
+		if !strings.HasSuffix(v.UriIndex, ".afindex") {
+			t.Error("index key", k, " want '.afindex' in UriIndex, got",
+				v.UriIndex)
+		} else {
+			seen[k] = true
+		}
+	}
+	if len(seen) != 3 {
+		t.Error("got", len(seen), "repos, want 2")
 	}
 }

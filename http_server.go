@@ -13,16 +13,16 @@ type Context struct {
 	searcher Searcher
 }
 
-func startHttpServer(bindAddr string, be *Service) (*web.Router, error) {
-	if bindAddr == "" {
-		bindAddr = ":40080"
+func startHttpServer(addr string, be *Service) (*web.Router, error) {
+	if addr == "" {
+		panic("no bind address passed")
 	}
 	app := web.New(be)
 	app.Get("/repos/:key", GetRepo)
 	app.Post("/repos/:key", PostRepo)
 	app.Get("/repos", GetAllRepos)
 
-	l, err := net.Listen("tcp", config.BindFlag)
+	l, err := net.Listen("tcp", addr)
 	if err == nil {
 		for {
 			go func() {

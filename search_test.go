@@ -17,7 +17,7 @@ var (
 
 func init() {
 	config.IndexInRepo = true
-	config.Noindex = `.afindex$`
+	config.SetNoIndex(`.afindex$`)
 }
 
 func createRepo(t *testing.T,
