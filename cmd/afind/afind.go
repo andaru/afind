@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"flag"
 	"fmt"
 	"strings"
@@ -38,16 +39,15 @@ type ctx struct {
 	rpcClient *afind.RpcClient
 }
 
-func newContext() *ctx {
+func newContext() (*ctx, error) {
 	if client, err := afind.NewRpcClient(*flagRpcAddress); err == nil {
 		keys := make([]string, len(flagKeys))
 		for i, k := range flagKeys {
 			keys[i] = k
 		}
-		return &ctx{repoKeys: keys, rpcClient: client}
+		return &ctx{repoKeys: keys, rpcClient: client}, nil
 	} else {
-		fmt.Errorf("%s", err)
-		return nil
+		return nil, err
 	}
 }
 
@@ -73,11 +73,10 @@ func index(context *ctx, key, root string, subdirs []string) error {
 func doAfind() {
 	command := strings.ToLower(flag.Arg(0))
 	args := flag.Args()[1:]
-	context := newContext()
-	if context.rpcClient == nil {
-		return
+	context, err := newContext()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, 
 	}
-
 	switch command {
 	case "index":
 		// args, minimum 1

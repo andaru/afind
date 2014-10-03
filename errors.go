@@ -37,3 +37,13 @@ func NewIndexAvailableError() *IndexAvailableError {
 func (e *IndexAvailableError) Error() string {
 	return "A repository with this key is already available"
 }
+
+type ValueError string
+
+func NewValueError(msg string) ValueError {
+	return ValueError(msg)
+}
+
+func (e ValueError) Error() string {
+	return string(e)
+}

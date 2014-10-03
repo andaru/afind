@@ -16,3 +16,12 @@ func normalizeUri(uri string) (string, error) {
 	abspath, _ := filepath.Abs(uri)
 	return abspath, nil
 }
+
+func repoIndexable(key string, repos KeyValueStorer) bool {
+	value := repos.Get(key)
+	log.Debug("repoIndexable key=%v value=%v", key, value)
+	if value != nil {
+		return value.(*Repo).State < ERROR
+	}
+	return true
+}

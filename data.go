@@ -18,6 +18,10 @@ const (
 	TB
 )
 
+const (
+	indexPathSuffix = ".afindex"
+)
+
 func (b ByteSize) String() string {
 	switch {
 	case b >= TB:
@@ -37,14 +41,9 @@ type Repo struct {
 	Key       string            // Unique key
 	IndexPath string            // Path to the .afindex file covering this Repo
 	Meta      map[string]string // User configurable metadata for this Repo
-	State     RepoState
-
-	// If >0, NumShards shard files $IndexPath.{1..$N} are created
-	NumShards int
-
-	Dirs []string
-
-	RepoMeta // additional metadata about the repo
+	Dirs      []string          // Directories contained within this Repo
+	RepoMeta                    // additional metadata about the repo
+	State     RepoState         //
 }
 
 // Indexing statistics for a repo. Generated during Index() calls.
@@ -54,6 +53,8 @@ type RepoMeta struct {
 	Elapsed   float64 // Approximate wallclock indexing time in seconds
 	SizeIndex uint32  // Size of the source index file in MB (10^6 bytes)
 	SizeData  int64   // Size of the data indexed by the Repo in bytes
+	// If >0, NumShards shard files $IndexPath.{1..$N} are created
+	NumShards int
 }
 
 type RepoState int
@@ -78,22 +79,26 @@ func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 	return r
 }
 
-const (
-	indexPathSuffix = ".afindex"
-)
+func newRepoFromIndexRequest(request *IndexRequest) *Repo {
+	repo := *newRepo(request.Key, "", request.Meta)
+	repo.NumShards = config.NumShards
+	copy(repo.Dirs, request.Dirs)
+	return &repo
+}
 
 func getShardRequestKey(i int, r *IndexRequest) string {
 	return fmt.Sprintf("%s_%02d", r.Key, i)
 }
 
-func getIndexPath(i int, r *IndexRequest) string {
-	var prefix string
-
+func getIndexPrefix(r *IndexRequest) string {
 	if config.IndexInRepo {
-		prefix = r.Root
-	} else {
-		prefix = config.IndexRoot
+		return r.Root
 	}
+	return config.IndexRoot
+}
+
+func getIndexPath(i int, r *IndexRequest) string {
+	prefix := getIndexPrefix(r)
 	// Try to make the path absolute
 	if absprefix, err := filepath.Abs(prefix); err == nil {
 		prefix = absprefix

@@ -29,7 +29,7 @@ var (
 )
 
 func init() {
-	config := &Config{DefaultRepoMeta: make(map[string]string)}
+	config = &Config{DefaultRepoMeta: make(map[string]string)}
 }
 
 func (c *Config) DefaultHostname() error {

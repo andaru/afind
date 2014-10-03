@@ -6,15 +6,6 @@ import (
 	"testing"
 )
 
-func assertEqual(t *testing.T, a, b interface{}) {
-	if a != b {
-		t.Errorf("%v != %v", a, b)
-	}
-}
-
-func TestNewIndexRequest(t *testing.T) {
-}
-
 func TestNewIndexRequestWithMeta(t *testing.T) {
 	ir := newIndexRequest("key", "root", []string{"foo", "foo/bar"})
 	if ir.Key != "key" {
@@ -47,32 +38,34 @@ func getTempDir(testname string) (dir string, err error) {
 	return ioutil.TempDir("/tmp", "test.afind")
 }
 
-func TestMakeIndex(t *testing.T) {
-	req := IndexRequest{Meta: map[string]string{"project": "Foo"}}
+func TestIndex(t *testing.T) {
+	req := IndexRequest{Meta: map[string]string{
+		"hostname": "afind123",
+		"project":  "Foo",
+	}}
 	var resp *IndexResponse
 	var dir string
 	var err error
-	var file *os.File
 
-	dir, file, err = getTempDirWithFile("TestMakeIndex")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(file.Name())
-	defer os.RemoveAll(dir)
+	config.NumShards = 8
 
 	req.Key = "1234"
 	req.Root = dir
 	req.Dirs = []string{"."}
-	resp, err = makeIndex(req, file)
+	ixr := newIndexer(newDb())
+	resp, err = ixr.Index(req)
+
+	if err != nil {
+		t.Fatal("unexpected error:", err)
+	}
 
 	if len(resp.Repos) != 1 {
 		t.Errorf("Want 1 repo, got %d repos", len(resp.Repos))
 	}
 	for _, resprepo := range resp.Repos {
 		// we indexed no files
-		if resprepo.SizeData != 0 {
-			t.Error("want 0 bytes data, got", resprepo.SizeData)
+		if resprepo.SizeData == 0 {
+			t.Error("want >0 bytes data")
 		}
 		if resprepo.SizeIndex < 1 {
 			t.Error("want >0 bytes index")

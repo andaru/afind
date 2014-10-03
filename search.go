@@ -109,6 +109,7 @@ type grep struct {
 	err  error
 }
 
+// Returns a new local RE2 grepper for this repository
 func newGrep(repo *Repo) *grep {
 	return &grep{repo: repo}
 }
@@ -116,21 +117,19 @@ func newGrep(repo *Repo) *grep {
 func (s *grep) searchRepo(request *SearchRequest) (
 	resp *SearchRepoResponse, err error) {
 
-	fname, _ := normalizeUri(s.repo.UriIndex)
+	fname := s.repo.IndexPath
 	resp = newSearchRepoResponse()
 
+	// Setup the RE2 expression text based on request options
 	pattern := "(?m)" + request.Re
 	if !request.CaseSensitive {
 		pattern = "(?i)" + pattern
 	}
+
 	re, err := regexp.Compile(pattern)
 	if err != nil {
 		return
 	}
-
-	// Attach the regular expression matcher, now setup, to
-	// this struct
-	s.Regexp = re
 
 	var fileRe *regexp.Regexp
 	if request.PathRe != "" {
@@ -140,16 +139,14 @@ func (s *grep) searchRepo(request *SearchRequest) (
 		}
 	}
 
-	// try to open the file for reading.
-	_, err = os.OpenFile(fname, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	// Open the index file
+	ix, err := index.Open(fname)
 	if os.IsNotExist(err) || os.IsPermission(err) {
 		return
 	}
 
-	// Error indication is clear, and can be reset.
-	err = nil
-
-	ix := index.Open(fname)
+	// Generate the trigram query from the search regexp
+	s.Regexp = re
 	q := index.RegexpQuery(re.Syntax)
 
 	// Perform the trigram index search
@@ -171,6 +168,7 @@ func (s *grep) searchRepo(request *SearchRequest) (
 
 	for _, id_ := range post {
 		name := ix.Name(id_)
+		log.Debug("posting match %v", name)
 		numlines, matches, err := s.grepFile(name)
 		resp.Matches[name] = matches
 		resp.NumLines = numlines

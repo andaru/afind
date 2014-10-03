@@ -28,7 +28,7 @@ func TestRpcIndexFunction(t *testing.T) {
 	}
 
 	// there was one dir, so only use one shard
-	repo := resp.Repos[key+"_000"]
+	repo := resp.Repos[key]
 
 	if repo.SizeData < 1 {
 		t.Error("got zero size data")
@@ -106,9 +106,9 @@ func TestGetRepo(t *testing.T) {
 		t.Error("unexpected error:", err)
 	}
 	for k, v := range repos.Repos {
-		if !strings.HasSuffix(v.UriIndex, ".afindex") {
-			t.Error("index key", k, " want '.afindex' in UriIndex, got",
-				v.UriIndex)
+		if !strings.HasPrefix(v.IndexPath, "key") {
+			t.Error("want 'key' at prefix to v.IndexPath which is",
+				v.IndexPath)
 		} else {
 			seen[k] = true
 		}
@@ -205,9 +205,9 @@ func TestGetAllRepos(t *testing.T) {
 	}
 	seen := make(map[string]bool)
 	for k, v := range repos.Repos {
-		if !strings.HasSuffix(v.UriIndex, ".afindex") {
-			t.Error("index key", k, " want '.afindex' in UriIndex, got",
-				v.UriIndex)
+		if !strings.HasPrefix(v.IndexPath, "key") {
+			t.Error("want 'key' at prefix to v.IndexPath which is",
+				v.IndexPath)
 		} else {
 			seen[k] = true
 		}
@@ -265,9 +265,9 @@ func TestGetPrefixRepos(t *testing.T) {
 
 	seen := make(map[string]bool)
 	for k, v := range repos.Repos {
-		if !strings.HasSuffix(v.UriIndex, ".afindex") {
-			t.Error("index key", k, " want '.afindex' in UriIndex, got",
-				v.UriIndex)
+		if !strings.HasPrefix(v.IndexPath, "key") {
+			t.Error("want 'key' at prefix to v.IndexPath which is",
+				v.IndexPath)
 		} else {
 			seen[k] = true
 		}
