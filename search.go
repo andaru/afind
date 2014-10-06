@@ -5,12 +5,15 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path"
+	"path/filepath"
 	"strconv"
 	"time"
 
 	"github.com/andaru/codesearch/index"
 	"github.com/andaru/codesearch/regexp"
 	"github.com/golang/glog"
+	"strings"
 )
 
 type searcher struct {
@@ -112,6 +115,29 @@ type grep struct {
 // Returns a new local RE2 grepper for this repository
 func newGrep(repo *Repo) *grep {
 	return &grep{repo: repo}
+}
+
+const (
+	dotIndexPathSuffix = "." + indexPathSuffix
+)
+
+func findShards(prefix string) ([]string, error) {
+	var err error
+	shards := make([]string, 0)
+	dir := path.Dir(prefix)
+	_ = filepath.Walk(dir, func(p string, i os.FileInfo, werr error) error {
+		if werr != nil {
+			err = werr
+		}
+		if strings.HasPrefix(p, prefix) && strings.HasSuffix(
+			p, dotIndexPathSuffix) {
+			// likely index path
+			shards = append(shards, p)
+		}
+		return nil
+	})
+	log.Debug("findShards found %+v", shards)
+	return shards, err
 }
 
 func (s *grep) searchRepo(request *SearchRequest) (

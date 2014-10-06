@@ -93,14 +93,18 @@ func TestGetRepo(t *testing.T) {
 	svc := newService(rs)
 	rpcsvc := newRpcService(svc)
 
-	ir := newIndexRequest("key1",
-		"./testdata/repo1/", []string{"dir1"})
-	ir2 := newIndexRequest("key2",
-		"./testdata/repo1/", []string{"dir2"})
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ir := newIndexRequest("key1", path.Join(cwd, "./testdata/repo1/"),
+		[]string{"dir1"})
+	ir2 := newIndexRequest("key2", path.Join(cwd, "./testdata/repo1/"),
+		[]string{"dir2"})
 
 	indexresp := newIndexResponse()
 	indexresp2 := newIndexResponse()
-	err := rpcsvc.Index(ir, indexresp)
+	err = rpcsvc.Index(ir, indexresp)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
@@ -111,14 +115,14 @@ func TestGetRepo(t *testing.T) {
 
 	seen := make(map[string]bool)
 	var repos Repos
-	keys := []string{"key1_000", "key2_000"}
+	keys := []string{"key1", "key2"}
 	err = rpcsvc.GetRepos(keys, &repos)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
 	for k, v := range repos.Repos {
-		if !strings.HasPrefix(v.IndexPath, "key") {
-			t.Error("want 'key' at prefix to v.IndexPath which is",
+		if !strings.Contains(v.IndexPath, "/repo1/key") {
+			t.Error("want '/repo1/key' in v.IndexPath which is",
 				v.IndexPath)
 		} else {
 			seen[k] = true
@@ -135,13 +139,19 @@ func TestReindexFailure(t *testing.T) {
 	rpcsvc := newRpcService(svc)
 
 	key := "SAME KEY"
-	ir := newIndexRequest(key, "./testdata/repo1/", []string{"dir1"})
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ir := newIndexRequest(key, path.Join(cwd, "./testdata/repo1/"),
+		[]string{"dir1"})
 	// even with different data, we can't index this again unless
 	// the first one failed.
-	ir2 := newIndexRequest(key, "./testdata/repo1/", []string{"dir2"})
+	ir2 := newIndexRequest(key, path.Join(cwd, "./testdata/repo1/"),
+		[]string{"dir2"})
 	resp := newIndexResponse()
 	resp2 := newIndexResponse()
-	err := rpcsvc.Index(ir, resp)
+	err = rpcsvc.Index(ir, resp)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
@@ -149,7 +159,7 @@ func TestReindexFailure(t *testing.T) {
 	if err == nil {
 		t.Error("expected an error")
 	}
-	if !strings.Contains(err.Error(), "with this key is already") {
+	if !strings.Contains(err.Error(), "Cannot replace existing") {
 		t.Error("error message [", err.Error(), "] was unexpected")
 	}
 }
@@ -159,10 +169,16 @@ func TestRpcSearch(t *testing.T) {
 	svc := newService(rs)
 	rpcsvc := newRpcService(svc)
 	key := "index1"
-	ir := newIndexRequest(key, "./testdata/repo1/", []string{"dir1"})
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ir := newIndexRequest(key, path.Join(cwd, "./testdata/repo1/"),
+		[]string{"dir1"})
 	iresp := newIndexResponse()
 
-	err := rpcsvc.Index(ir, iresp)
+	err = rpcsvc.Index(ir, iresp)
 	if err != nil {
 		t.Error("unexpected error:", err)
 		return
@@ -183,20 +199,25 @@ func TestRpcSearch(t *testing.T) {
 
 // Test Index and GetRepo (includes SetRepo calls from Index)
 func TestGetAllRepos(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	svc := newService(newDb())
 	rpcsvc := newRpcService(svc)
 
-	ir := newIndexRequest("key1",
-		"./testdata/repo1/", []string{"dir1"})
-	ir2 := newIndexRequest("key2",
-		"./testdata/repo1/", []string{"dir2"})
-	ir3 := newIndexRequest("key3",
-		"./testdata/repo1/", []string{"."})
+	ir := newIndexRequest("key1", path.Join(cwd, "./testdata/repo1/"),
+		[]string{"dir1"})
+	ir2 := newIndexRequest("key2", path.Join(cwd, "./testdata/repo1/"),
+		[]string{"dir2"})
+	ir3 := newIndexRequest("key3", path.Join(cwd, "./testdata/repo1/"),
+		[]string{"."})
 
 	indexresp := newIndexResponse()
 	indexresp2 := newIndexResponse()
 	indexresp3 := newIndexResponse()
-	err := rpcsvc.Index(ir, indexresp)
+	err = rpcsvc.Index(ir, indexresp)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
@@ -242,12 +263,17 @@ func TestGetPrefixRepos(t *testing.T) {
 	}
 	go svr.Accept(l)
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	ir := newIndexRequest("key1",
-		"./testdata/repo1/", []string{"dir1"})
+		path.Join(cwd, "./testdata/repo1/"), []string{"dir1"})
 	ir2 := newIndexRequest("key2",
-		"./testdata/repo1/", []string{"dir2"})
+		path.Join(cwd, "./testdata/repo1/"), []string{"dir2"})
 	ir3 := newIndexRequest("key3",
-		"./testdata/repo1/", []string{"."})
+		path.Join(cwd, "./testdata/repo1/"), []string{"."})
 
 	client, cerr := NewRpcClient(addr)
 	if cerr != nil {

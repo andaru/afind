@@ -42,6 +42,8 @@ func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
 
 func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	log.Info("Indexing %+v", request)
+	start := time.Now()
+
 	if err := validateIndexRequest(&request, i.repos); err != nil {
 		log.Debug("Indexing %v failed: %v", request.Key, err)
 		return nil, err
@@ -135,9 +137,13 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 		repo.SizeData += ix.DataBytes()
 		repo.SizeIndex += ix.IndexBytes()
 	}
+	repo.IndexPath = path.Join(request.Root, request.Key)
 	repo.NumFiles = numFiles
 	repo.NumDirs = numDirs
 	resp.Repos[repo.Key] = repo
+	resp.Elapsed = time.Since(start)
+	log.Debug("setting %v=%#v", repo.Key, repo)
 	err = i.repos.Set(repo.Key, repo)
+	log.Info("Indexing %v finished in %v", request.Key, resp.Elapsed)
 	return
 }

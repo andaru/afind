@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type ByteSize float64
@@ -48,11 +49,10 @@ type Repo struct {
 
 // Indexing statistics for a repo. Generated during Index() calls.
 type RepoMeta struct {
-	NumDirs   int     // Number of directories indexed
-	NumFiles  int     // Number of files indexed
-	Elapsed   float64 // Approximate wallclock indexing time in seconds
-	SizeIndex uint32  // Size of the source index file in MB (10^6 bytes)
-	SizeData  int64   // Size of the data indexed by the Repo in bytes
+	NumDirs   int    // Number of directories indexed
+	NumFiles  int    // Number of files indexed
+	SizeIndex uint32 // Size of the source index file in MB (10^6 bytes)
+	SizeData  int64  // Size of the data indexed by the Repo in bytes
 	// If >0, NumShards shard files $IndexPath.{1..$N} are created
 	NumShards int
 }
@@ -184,7 +184,8 @@ type repoPlusStats struct {
 
 // The response to calls to Indexer.Index.
 type IndexResponse struct {
-	Repos map[string]*Repo
+	Repos   map[string]*Repo
+	Elapsed time.Duration
 	// todo: errors
 }
 
