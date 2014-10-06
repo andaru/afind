@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/andaru/codesearch/index"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -22,12 +24,27 @@ func newIndexer(repos KeyValueStorer) *indexer {
 	return &indexer{repos, config.NumShards}
 }
 
-func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
+func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
+	var err error
+
 	if len(request.Dirs) == 0 {
-		return nil, NewValueError(
-			"Dirs must contain at least one subdirectory of Root")
-	} else if !repoIndexable(request.Key, i.repos) {
-		return nil, NewIndexAvailableError()
+		err = newValueError(
+			"Dirs",
+			"Requires at least one sub dir of Root, such as '.'")
+	} else if !path.IsAbs(request.Root) {
+		err = newValueError(
+			"Root", "Root must be an absolute path")
+	} else if repos.Get(request.Key) != nil {
+		err = newIndexAvailableError(request.Key)
+	}
+	return err
+}
+
+func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
+	log.Info("Indexing %+v", request)
+	if err := validateIndexRequest(&request, i.repos); err != nil {
+		log.Debug("Indexing %v failed: %v", request.Key, err)
+		return nil, err
 	}
 
 	resp = newIndexResponse()
@@ -38,14 +55,20 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 
 	shards := make([]*index.IndexWriter, numShards)
 	for n := range shards {
-		shards[n] = index.Create(getIndexPath(n, &request))
+		shards[n] = index.Create(path.Join(
+			request.Root, request.Key+"-"+strconv.Itoa(n)+".afindex"))
 	}
 
 	// Build the master path list from request.Dirs, ignoring absolute paths
 	paths := make([]string, 0)
 	for _, p := range request.Dirs {
-		if p != "" && !path.IsAbs(p) {
-			paths = append(paths, p)
+		if p == "" {
+			continue
+		}
+		if !path.IsAbs(p) {
+			paths = append(paths, path.Join(request.Root, p))
+		} else {
+			log.Debug("skip non absolute path '%s'")
 		}
 	}
 
@@ -60,19 +83,28 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	for _, path := range paths {
 		lasterr = filepath.Walk(path,
 			func(path string, info os.FileInfo, werr error) error {
+				// log.Debug("walk path %v info=%+v", path, info)
 				if info == nil {
 					return nil
 				}
 
-				// skip excluded files, directories
-				log.Debug("file %s dir? %v", path, info.IsDir())
+				// If a path regular expression was provided,
+				// only include files or whole directories
+				// that regular expression.
 				if reg != nil && reg.FindString(path) != "" {
 					if info.IsDir() {
 						return filepath.SkipDir
 					}
 					return nil
 				}
-				// Maybe set the last error
+				// Skip excluded extensions and prefixes
+				if IndexPathExcludes.MatchFile(path) {
+					if info.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				// Set the last error if we had an IO error walking
 				if werr != nil {
 					err = werr
 					return nil
@@ -83,7 +115,8 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 					// TODO: handle archives
 					slotnum := numFiles % numShards
 					log.Debug("add path [%v] to shard %d", path, slotnum)
-					shards[slotnum].AddFile(path)
+					finalpath := strings.TrimPrefix(path, request.Root)
+					shards[slotnum].AddFileInRoot(request.Root, finalpath)
 					numFiles++
 				}
 				// TODO: count errors
@@ -95,8 +128,10 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	// Flush the indices
 	repo := newRepoFromIndexRequest(&request)
 	for _, ix := range shards {
-		ix.Flush()
-		log.Debug("flush data/index %vb/%vb", ix.DataBytes(), ix.IndexBytes())
+		if ix.DataBytes() > 0 {
+			ix.Flush()
+			log.Debug("flush data/index %vb/%vb", ix.DataBytes(), ix.IndexBytes())
+		}
 		repo.SizeData += ix.DataBytes()
 		repo.SizeIndex += ix.IndexBytes()
 	}

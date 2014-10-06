@@ -3,6 +3,7 @@ package afind
 import (
 	"io/ioutil"
 	"os"
+	"path"
 	"testing"
 )
 
@@ -39,18 +40,20 @@ func getTempDir(testname string) (dir string, err error) {
 }
 
 func TestIndex(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	req := IndexRequest{Meta: map[string]string{
 		"hostname": "afind123",
 		"project":  "Foo",
 	}}
 	var resp *IndexResponse
-	var dir string
-	var err error
 
 	config.NumShards = 8
 
 	req.Key = "1234"
-	req.Root = dir
+	req.Root = path.Join(cwd, "./testdata/repo1/")
 	req.Dirs = []string{"."}
 	ixr := newIndexer(newDb())
 	resp, err = ixr.Index(req)

@@ -3,21 +3,27 @@ package afind
 import (
 	"net"
 	"net/rpc"
+	"os"
 	"strings"
 
+	"path"
 	"testing"
 )
 
 // Test outside of the RPC framework
 func TestRpcIndexFunction(t *testing.T) {
 	key := "key"
-	ir := newIndexRequest(key, "./testdata/repo1/", []string{"."})
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ir := newIndexRequest(key, path.Join(cwd, "./testdata/repo1/"), []string{"."})
 
 	repos := newDb()
 	svc := newService(repos)
 	rpcsvc := newRpcService(svc)
 	resp := newIndexResponse()
-	err := rpcsvc.Index(ir, resp)
+	err = rpcsvc.Index(ir, resp)
 
 	if err != nil {
 		t.Error("unexpected error:", err)
@@ -28,8 +34,10 @@ func TestRpcIndexFunction(t *testing.T) {
 	}
 
 	// there was one dir, so only use one shard
-	repo := resp.Repos[key]
-
+	repo, ok := resp.Repos[key]
+	if !ok {
+		t.Fatal("did not find expected key:", key)
+	}
 	if repo.SizeData < 1 {
 		t.Error("got zero size data")
 	}
@@ -62,9 +70,12 @@ func TestRpcIndexWithServer(t *testing.T) {
 	if err != nil {
 		log.Fatal("dialing:", err)
 	}
-	args := newIndexRequest("key",
-		"./testdata/repo1/", []string{"."})
-
+	key := "key"
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := newIndexRequest(key, path.Join(cwd, "./testdata/repo1/"), []string{"."})
 	reply := IndexResponse{Repos: make(map[string]*Repo)}
 
 	err = client.Call("Afind.Index", args, &reply)

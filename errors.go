@@ -1,49 +1,70 @@
 package afind
 
+import (
+	"fmt"
+)
+
 // Error types
 
-type errorMsg struct {
-	msg string
+// General API error
+type ApiError struct {
+	eType string
+	msg   string
 }
 
-func (e errorMsg) Error() string {
-	return e.msg
+func newApiError(typ, msg string) *ApiError {
+	return &ApiError{eType: typ, msg: msg}
 }
 
-type errorMsgAction struct {
-	errorMsg
-	action string
+func (e *ApiError) Error() string {
+	return e.eType + `:` + e.msg
 }
 
-func (e errorMsgAction) Error() string {
-	if e.action != "" {
-		return e.action + `:` + e.errorMsg.msg
+func IsApiError(e error) bool {
+	if _, ok := e.(*ApiError); ok {
+		return true
 	}
-	return e.errorMsg.msg
+	return false
 }
 
-func NewApiError(action, message string) error {
-	return errorMsgAction{errorMsg{message}, action}
+// Index is already available
+type IndexAvailableError struct {
+	key string
 }
 
-//
-
-type IndexAvailableError struct{}
-
-func NewIndexAvailableError() *IndexAvailableError {
-	return &IndexAvailableError{}
+func newIndexAvailableError(key string) *IndexAvailableError {
+	return &IndexAvailableError{key: key}
 }
 
 func (e *IndexAvailableError) Error() string {
-	return "A repository with this key is already available"
+	return "Cannot replace existing repository with key '" + e.key + "'"
 }
 
-type ValueError string
+func IsIndexAvailableError(e error) bool {
+	if _, ok := e.(*IndexAvailableError); ok {
+		return true
+	}
+	return false
+}
 
-func NewValueError(msg string) ValueError {
-	return ValueError(msg)
+// There was an error regarding the value of some argunent
+type ValueError struct {
+	arg string
+	msg string
+}
+
+func newValueError(arg, msg string) *ValueError {
+	return &ValueError{arg: arg, msg: msg}
 }
 
 func (e ValueError) Error() string {
-	return string(e)
+	return fmt.Sprintf(`Value for argument '%s' is invalid: %s`,
+		e.arg, e.msg)
+}
+
+func IsValueError(e error) bool {
+	if _, ok := e.(*ValueError); ok {
+		return true
+	}
+	return false
 }
