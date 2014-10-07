@@ -2,14 +2,11 @@ package afind
 
 import (
 	"sync"
-
-	"github.com/andaru/go-art"
 )
 
 type db struct {
 	*sync.RWMutex
-	r  map[string]*Repo
-	rt *art.ArtTree
+	r map[string]*Repo
 }
 
 type iterFunc func(key string, value interface{}) bool
@@ -53,7 +50,6 @@ func (d *db) Set(key string, value interface{}) error {
 	defer d.Unlock()
 
 	d.r[key] = value.(*Repo)
-	d.rt.Insert([]byte(key), value)
 	return nil
 }
 
@@ -61,7 +57,6 @@ func (d *db) Delete(key string) error {
 	d.Lock()
 	defer d.Unlock()
 	delete(d.r, key)
-	d.rt.Remove([]byte(key))
 	return nil
 }
 
@@ -76,5 +71,5 @@ func (d *db) ForEach(f iterFunc) {
 }
 
 func newDb() *db {
-	return &db{&sync.RWMutex{}, make(map[string]*Repo), art.NewArtTree()}
+	return &db{&sync.RWMutex{}, make(map[string]*Repo)}
 }

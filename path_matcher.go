@@ -1,7 +1,7 @@
 package afind
 
 import (
-	"github.com/andaru/go-art"
+	"github.com/kellydunn/go-art"
 	"strings"
 )
 
