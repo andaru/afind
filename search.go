@@ -14,11 +14,22 @@ import (
 )
 
 type searcher struct {
-	repos KeyValueStorer
+	repos  KeyValueStorer
+	client *RpcClient
 }
 
 func newSearcher(repos KeyValueStorer) *searcher {
-	return &searcher{repos}
+	return &searcher{repos: repos}
+}
+
+func newSearcherRemote(repos KeyValueStorer, address string) (*searcher, error) {
+	var s *searcher
+
+	client, err := NewRpcClient(address)
+	if err == nil {
+		s = &searcher{repos: repos, client: client}
+	}
+	return s, err
 }
 
 func merge(in *SearchRepoResponse, out *SearchResponse) {
@@ -39,7 +50,8 @@ func merge(in *SearchRepoResponse, out *SearchResponse) {
 func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	var err error
 	sr := newSearchResponse()
-	log.Info("Search %+v", request)
+	log.Info("Search [%v] path: [%v] keys: %v cs: %v",
+		request.Re, request.PathRe, request.RepoKeys, request.CaseSensitive)
 
 	start := time.Now()
 
@@ -63,8 +75,6 @@ func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 		return nil, newNoRepoAvailableError()
 	}
 
-	log.Debug("searching %d repos", len(repos))
-
 	// Search specific repos concurrently
 	ch := make(chan *SearchRepoResponse)
 	total := 0
@@ -76,7 +86,11 @@ func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 			total++
 			go func(sh string, r *Repo) {
 				newSr := newSearchRepoResponse()
-				newSr, err = s.searchOne(sh, r, request)
+				if !isRemote(r) {
+					newSr, err = s.searchOneLocal(sh, r, request)
+				} else {
+					newSr, err = s.searchOneRemote(r, request)
+				}
 				ch <- newSr
 			}(shard, repo)
 		}
@@ -92,19 +106,54 @@ func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 			total--
 		}
 	}
-	since := time.Since(start)
-	sr.ElapsedNs = since.Nanoseconds()
-	log.Info("Search %+v complete in %v", request, since)
+	sr.Elapsed = time.Since(start)
+	log.Info("Search [%v] path: [%v] complete in %v (%d repos)",
+		request.Re, request.PathRe, sr.Elapsed, len(repos))
 	return sr, err
 }
 
-func (s *searcher) searchOne(fname string, repo *Repo, request SearchRequest) (
-	*SearchRepoResponse, error) {
+func repoHost(repo *Repo) string {
+	host, ok := repo.Meta["hostname"]
+	if !ok {
+		return ""
+	}
+	return host
+}
 
+func isRemote(repo *Repo) bool {
+	ourhost, _ := config.DefaultRepoMeta["hostname"]
+	// len() works with both nil and emptry string
+	if len(ourhost) == 0 {
+		return false
+	}
+
+	theirhost := repoHost(repo)
+	if theirhost == "" {
+		return false
+	} else if ourhost != theirhost {
+		return true
+	}
+	return false
+}
+
+func (s *searcher) searchOneLocal(fname string, repo *Repo, request SearchRequest) (
+	reporesp *SearchRepoResponse, err error) {
 	g := newGrep(repo)
-	reporesp, err := g.searchRepo(fname, &request)
+	log.Debug("local search [%s]", fname)
+	reporesp, err = g.searchRepo(fname, &request)
 	reporesp.Repo = repo
-	return reporesp, err
+	return
+}
+
+func (s *searcher) searchOneRemote(repo *Repo, request SearchRequest) (
+	reporesp *SearchRepoResponse, err error) {
+	if s.client == nil {
+		return nil, newNoRpcClientError()
+	}
+	log.Debug("remote search host [%s]", repoHost(repo))
+	reporesp, err = s.client.SearchRepo(repo.Key, request)
+	reporesp.Repo = repo
+	return
 }
 
 // A grep shadows the codesearch Grep
@@ -182,11 +231,11 @@ func (s *grep) searchRepo(fname string, request *SearchRequest) (
 
 	for _, id_ := range post {
 		name := ix.Name(id_)
-		numlines, matches, err := s.grepFile(name)
+		numlines, matches, gerr := s.grepFile(name)
 		resp.Matches[name] = matches
 		resp.NumLines = numlines
-		if err != nil {
-			s.err = err
+		if gerr != nil {
+			err = gerr
 			log.Error("%s: %v", name, err)
 		}
 	}

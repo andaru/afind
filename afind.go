@@ -23,7 +23,7 @@ type Service struct {
 }
 
 func newService(repos KeyValueStorer) *Service {
-	return &Service{repos, indexer{repos, config.NumShards}, searcher{repos}}
+	return &Service{repos, *newIndexer(repos), *newSearcher(repos)}
 }
 
 // The Afind system

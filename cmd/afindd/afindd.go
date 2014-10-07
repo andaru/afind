@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 
+	"fmt"
 	"github.com/andaru/afind"
 	"github.com/op/go-logging"
 )
@@ -62,17 +63,24 @@ func setupLogging() {
 	logging.SetFormatter(logging.GlogFormatter)
 }
 
+var af *afind.System
+
 func main() {
 	var err error
 	flag.Parse()
 	setupLogging()
 	setupConfig()
 
-	a := afind.New()
-	err = a.Start()
+	af := afind.New()
+	err = af.Start()
+
 	if err != nil {
-		log.Error("%v", err)
+		fmt.Fprintln(os.Stderr, "failed to start:")
 	} else {
-		a.WaitForExit()
+		err = af.WaitForExit()
+	}
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 	}
 }

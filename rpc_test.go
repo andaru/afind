@@ -189,9 +189,6 @@ func TestRpcSearch(t *testing.T) {
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
-	if sresp.ElapsedNs < 1 {
-		t.Error("expected elapsed time > 0")
-	}
 	if sresp.NumLinesMatched != 1 {
 		t.Error("expected 1 line match, got", sresp.NumLinesMatched)
 	}
@@ -230,13 +227,13 @@ func TestGetAllRepos(t *testing.T) {
 		t.Error("unexpected error:", err)
 	}
 
-	var repos Repos
+	var repos map[string]*Repo
 	err = rpcsvc.GetAllRepos(true, &repos)
-	if len(repos.Repos) != 3 {
-		t.Error("got", len(repos.Repos), "repos, want 3")
+	if len(repos) != 3 {
+		t.Error("got", len(repos), "repos, want 3")
 	}
 	seen := make(map[string]bool)
-	for k, v := range repos.Repos {
+	for k, v := range repos {
 		if !strings.Contains(v.IndexPath, "/repo1/key") {
 			t.Error("want '/repo1/key' in v.IndexPath which is",
 				v.IndexPath)
@@ -245,7 +242,7 @@ func TestGetAllRepos(t *testing.T) {
 		}
 	}
 	if len(seen) != 3 {
-		t.Error("got", len(seen), "repos, want 2")
+		t.Error("got", len(seen), "repos, want 3")
 	}
 }
 

@@ -22,6 +22,7 @@ var (
 
 	// -key 1,2 -key 3 : one or more comma separated groups of keys
 	flagKeys afind.FlagStringSlice
+	flagMeta = make(afind.FlagSSMap)
 
 	log = logging.MustGetLogger("afind")
 )
@@ -29,6 +30,8 @@ var (
 func init() {
 	flag.Var(&flagKeys, "key",
 		"Search just this comma-separated list of repository keys")
+	flag.Var(&flagMeta, "D",
+		"A key=value pair to add to index or search request metadata")
 }
 
 // the union context for any single command execution
@@ -51,49 +54,34 @@ func newContext() (*ctx, error) {
 	}
 }
 
-func search(context *ctx, query string) {
-	request := afind.SearchRequest{
-		Re:            query,
-		PathRe:        *flagSearchPath,
-		CaseSensitive: !*flagInsens,
-	}
-	sr, err := context.rpcClient.Search(request)
-	if err != nil {
-		fmt.Errorf("error: %v\n", err)
-	}
-	printMatches(sr)
-}
-
 func werr(err error) {
 	fmt.Fprintf(os.Stderr, "error: %v\n", err)
 }
 
-func repos(context *ctx, key string) {
-	if key == "" {
-		// show list of repos
-		repos, err := context.rpcClient.GetAllRepos()
-		if err != nil {
-			werr(err)
-			return
-		}
-		for k, v := range repos.Repos {
-			fmt.Printf("Repo: %v\n", k)
-			fmt.Printf("  root: %v\n", v.Root)
-			fmt.Printf("  file (directory) count: %d (%d)\n", v.NumFiles, v.NumDirs)
-			fmt.Printf("  meta:\n")
-			for mk, mv := range v.Meta {
-				fmt.Printf("    %s=%s\n", mk, mv)
-			}
-			fmt.Println()
-		}
+func search(context *ctx, query string) error {
+	request := afind.SearchRequest{
+		Re:            query,
+		PathRe:        *flagSearchPath,
+		CaseSensitive: !*flagInsens,
+		RepoKeys:      flagKeys,
+		Meta:          flagMeta,
 	}
+	sr, err := context.rpcClient.Search(request)
+	if err == nil {
+		printMatches(sr)
+	}
+	return err
 }
 
 func index(context *ctx, key, root string, subdirs []string) error {
-	request := afind.IndexRequest{Key: key, Root: root, Dirs: subdirs}
+	request := afind.IndexRequest{
+		Key:  key,
+		Root: root,
+		Dirs: subdirs,
+		Meta: flagMeta,
+	}
 	ir, err := context.rpcClient.Index(request)
 	if err != nil {
-		werr(err)
 		return err
 	} else {
 		r, ok := ir.Repos[key]
@@ -104,6 +92,44 @@ func index(context *ctx, key, root string, subdirs []string) error {
 
 	}
 	return nil
+}
+
+func printrepo(repo *afind.Repo) {
+	fmt.Printf("Repo: %v\n", repo.Key)
+	fmt.Printf("  root: %v\n", repo.Root)
+	fmt.Printf("  file (directory) count: %d (%d)\n", repo.NumFiles, repo.NumDirs)
+	fmt.Printf("  meta:\n")
+	for mk, mv := range repo.Meta {
+		fmt.Printf("    %s=%s\n", mk, mv)
+	}
+}
+
+func repos(context *ctx, key string) error {
+	var err error
+	repos := make(map[string]*afind.Repo)
+	repo, err := context.rpcClient.GetRepo(key)
+	if repo == nil {
+		// retrieve all repos, perhaps to filter
+		rs, allerr := context.rpcClient.GetAllRepos()
+		if allerr != nil {
+			return allerr
+		}
+		for k, v := range rs {
+			repos[k] = v
+		}
+	} else {
+
+		repos[repo.Key] = repo
+		fmt.Printf("%#v\n", repos)
+	}
+
+	for k, repo := range repos {
+		if strings.HasPrefix(k, key) {
+			printrepo(repo)
+		}
+	}
+
+	return err
 }
 
 func doAfind() {

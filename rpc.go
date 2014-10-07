@@ -5,18 +5,19 @@ import (
 )
 
 func (self *RpcService) Search(req SearchRequest, resp *SearchResponse) error {
-	// resp.Files = make(map[string]map[string]map[string]string)
+	start := time.Now()
 	r, err := self.Searcher.Search(req)
 	if r != nil {
 		resp.Files = r.Files
 		resp.NumLinesMatched = r.NumLinesMatched
-		resp.ElapsedNs = r.ElapsedNs
 	}
+	resp.Elapsed = time.Since(start)
 	return err
 }
 
 func (self *RpcService) Index(req IndexRequest, response *IndexResponse) error {
 	start := time.Now()
+	req = newIndexRequestWithMeta(req.Key, req.Root, req.Dirs, req.Meta)
 	repos, err := self.Indexer.Index(req)
 	if err != nil {
 		return err
@@ -26,17 +27,19 @@ func (self *RpcService) Index(req IndexRequest, response *IndexResponse) error {
 	return err
 }
 
-func (self *RpcService) GetRepo(key string, response *Repos) error {
-	repos := make(map[string]*Repo)
+func (self *RpcService) GetRepo(key string, response *Repo) error {
+	log.Debug("GetRepo key=%v", key)
 	repo := self.Service.repos.Get(key)
 	if repo != nil {
-		repos[key] = repo.(*Repo)
+		r := repo.(*Repo)
+		response = &(*r)
+		return nil
 	}
-	response.Repos = repos
-	return nil
+	return newNoRepoAvailableError()
 }
 
 func (self *RpcService) GetRepos(keys []string, response *Repos) error {
+	log.Debug("GetRepos keys=%v", keys)
 	repos := make(map[string]*Repo)
 	for _, key := range keys {
 		repo := self.Service.repos.Get(key)
@@ -48,10 +51,9 @@ func (self *RpcService) GetRepos(keys []string, response *Repos) error {
 	return nil
 }
 
-func (self *RpcService) GetAllRepos(_ bool, response *Repos) error {
+func (self *RpcService) GetAllRepos(_ bool, response *map[string]*Repo) error {
 	repos := make(map[string]*Repo)
 	self.repos.ForEach(func(key string, value interface{}) bool {
-		log.Debug("key=%v value=%v", key, value)
 		if v, ok := value.(*Repo); ok {
 			repos[key] = v
 		} else {
@@ -59,7 +61,7 @@ func (self *RpcService) GetAllRepos(_ bool, response *Repos) error {
 		}
 		return true
 	})
-	response.Repos = repos
+	*response = repos
 	return nil
 }
 

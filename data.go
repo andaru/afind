@@ -52,8 +52,6 @@ type RepoMeta struct {
 	NumFiles  int    // Number of files indexed
 	SizeIndex uint32 // Size of the source index file in MB (10^6 bytes)
 	SizeData  int64  // Size of the data indexed by the Repo in bytes
-	// If >0, NumShards shard files $IndexPath.{1..$N} are created
-	NumShards int
 }
 
 type RepoState int
@@ -80,7 +78,6 @@ func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 
 func newRepoFromIndexRequest(request *IndexRequest) *Repo {
 	repo := newRepo(request.Key, "", request.Meta)
-	repo.NumShards = config.NumShards
 	repo.Root = request.Root
 	copy(repo.Dirs, request.Dirs)
 	return repo
@@ -90,7 +87,7 @@ type Repos struct {
 	Repos map[string]*Repo
 }
 
-func newRepos() *Repos {
+func NewRepos() *Repos {
 	return &Repos{Repos: make(map[string]*Repo)}
 }
 
@@ -209,6 +206,7 @@ type SearchRequest struct {
 	Re, PathRe    string
 	CaseSensitive bool
 	RepoKeys      []string
+	Meta          map[string]string
 }
 
 func newSearchRequest(re, pathRe string, cs bool, repoKeys []string) SearchRequest {
@@ -233,7 +231,7 @@ type SearchResponse struct {
 	Files map[string]map[string]map[string]string
 
 	NumLinesMatched int64 // total number of lines with 1 or more matches
-	ElapsedNs       int64 // nanoseconds elapsed during search(es)
+	Elapsed         time.Duration
 
 	// todo: errors
 }
@@ -251,7 +249,6 @@ func newSearchRepoResponse() *SearchRepoResponse {
 func newSearchResponse() *SearchResponse {
 	return &SearchResponse{
 		Files:           make(map[string]map[string]map[string]string),
-		ElapsedNs:       0,
 		NumLinesMatched: 0,
 	}
 }

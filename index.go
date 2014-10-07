@@ -18,10 +18,21 @@ const (
 type indexer struct {
 	repos   KeyValueStorer
 	nshards int
+	client  *RpcClient
 }
 
 func newIndexer(repos KeyValueStorer) *indexer {
-	return &indexer{repos, config.NumShards}
+	return &indexer{repos: repos, nshards: config.NumShards}
+}
+
+func newIndexerRemote(repos KeyValueStorer, address string) (*indexer, error) {
+	var i *indexer
+
+	client, err := NewRpcClient(address)
+	if err == nil {
+		i = &indexer{repos: repos, nshards: config.NumShards, client: client}
+	}
+	return i, err
 }
 
 func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
@@ -40,12 +51,12 @@ func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
 	return err
 }
 
-func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
-	log.Info("Indexing %+v", request)
+func (i *indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err error) {
+	log.Info("local index %v (%d sub dirs)", request.Key, len(request.Dirs))
 	start := time.Now()
 
 	if err := validateIndexRequest(&request, i.repos); err != nil {
-		log.Debug("Indexing %v failed: %v", request.Key, err)
+		log.Debug("local index %v failed: %v", request.Key, err)
 		return nil, err
 	}
 
@@ -124,7 +135,6 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 				return nil
 			})
 	}
-	log.Debug("indexed %d files in %d directories", numFiles, numDirs)
 	err = lasterr
 
 	// Flush the indices
@@ -143,16 +153,56 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	repo.NumFiles = numFiles
 	repo.NumDirs = numDirs
 	resp.Repos[repo.Key] = repo
-	// Set meta from defaults then override from request
-	for k, v := range config.DefaultRepoMeta {
-		repo.Meta[k] = v
-	}
 	for k, v := range request.Meta {
 		repo.Meta[k] = v
 	}
 	resp.Elapsed = time.Since(start)
-	log.Debug("set Repo %+v", repo)
 	err = i.repos.Set(repo.Key, repo)
-	log.Info("Indexing %v finished in %v", request.Key, resp.Elapsed)
+	log.Info("local index %v (%d files/%d dirs) finished in %v",
+		request.Key, numFiles, numDirs, resp.Elapsed)
+	log.Debug("repo=%#v", repo)
 	return
+}
+
+func (i *indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err error) {
+	log.Debug("remote index host [%s]", indexRequestHost(&request))
+	if i.client == nil {
+		return nil, newNoRpcClientError()
+	}
+	resp, err = i.client.Index(request)
+	return resp, err
+}
+
+func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
+	// Set meta from defaults then override from request
+	for k, v := range config.DefaultRepoMeta {
+		request.Meta[k] = v
+	}
+
+	if isIndexRequestLocal(&request) {
+		return i.indexLocal(request)
+	} else {
+		return i.indexRemote(request)
+	}
+}
+
+func indexRequestHost(request *IndexRequest) string {
+	host, ok := request.Meta["hostname"]
+	if !ok {
+		return ""
+	} else {
+		return host
+	}
+}
+
+func isIndexRequestLocal(request *IndexRequest) bool {
+	host := indexRequestHost(request)
+	localhost, _ := config.DefaultRepoMeta["hostname"]
+	if len(localhost) == 0 {
+		return true
+	}
+	if localhost != host {
+		return false
+	}
+	return true
 }

@@ -65,3 +65,21 @@ func IsNoRepoAvailableError(e error) bool {
 	}
 	return false
 }
+
+// No RPC client available for remote searches
+type NoRpcClientError struct{}
+
+func newNoRpcClientError() *NoRpcClientError {
+	return &NoRpcClientError{}
+}
+
+func (e NoRpcClientError) Error() string {
+	return "No local RPC client to perform remote requests"
+}
+
+func IsNoRpcClientError(e error) bool {
+	if _, ok := e.(*NoRpcClientError); ok {
+		return true
+	}
+	return false
+}
