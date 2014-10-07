@@ -11,11 +11,6 @@ import (
 // This file composes the different system parts (defined as
 // interfaces in data.go) into the overall Afind system.
 
-type Backend interface {
-	Indexer
-	Searcher
-}
-
 type Service struct {
 	repos    KeyValueStorer
 	Indexer  indexer
@@ -32,9 +27,10 @@ type System struct {
 	Indexer
 	Searcher
 
-	quit      chan error
-	rpcServer *rpc.Server
-	repos     KeyValueStorer
+	quit       chan error
+	rpcServer  *rpc.Server
+	httpServer *http.Server
+	repos      KeyValueStorer
 }
 
 // Composes and returns a new Afind system.
@@ -92,11 +88,12 @@ func (s *System) setupRpcServer() {
 	if err := s.rpcServer.RegisterName("Afind", rpcsvc); err != nil {
 		log.Fatal(err)
 	}
+
 }
 
 func (s *System) startRpcServer() error {
 	if s.rpcServer == nil {
-		panic("RPC server not initialized")
+		s.setupRpcServer()
 	}
 
 	l, err := net.Listen("tcp", config.RpcBind)
