@@ -3,7 +3,6 @@ package afind
 import (
 	"os"
 	"path"
-	"strings"
 	"testing"
 )
 
@@ -28,8 +27,6 @@ func createRepo(t *testing.T,
 		t.Fatal(err)
 	}
 	ir := newIndexRequest(key, dir, paths)
-	// defer os.Remove(file.Name())
-	//
 
 	// Add the files to the repo
 	for name, contents := range files {
@@ -74,11 +71,11 @@ func TestSearchRepoBothDirs(t *testing.T) {
 	}
 
 	// Confirm we got the files we expected
-	want := []string{"/dir1/file1", "/dir2/file1"}
+	want := []string{"dir1/file1", "dir2/file1"}
 	got := make([]string, 0)
 	for k, _ := range resp.Files {
 		for _, wantk := range want {
-			if strings.Contains(k, wantk) {
+			if k == wantk {
 				got = append(got, k)
 			}
 		}
@@ -119,7 +116,7 @@ func TestSearchWithPathRe(t *testing.T) {
 	defer os.RemoveAll(createRepo(t, svc, repo1, key, []string{"dir1", "dir2"}))
 
 	// Search for something that exists, but not in this dir
-	sr := newSearchRequest("file in dir1", ".*/dir2/.*", false, []string{key})
+	sr := newSearchRequest("file in dir1", "dir2/.*", false, []string{key})
 	resp, err := svc.Searcher.Search(sr)
 
 	if err != nil {
@@ -130,7 +127,7 @@ func TestSearchWithPathRe(t *testing.T) {
 	}
 
 	// Now use a pathRe which matches the path with the string 'file in dir1'
-	sr = newSearchRequest("file in dir1", ".*/dir1/.*", false, []string{key})
+	sr = newSearchRequest("file in dir1", "dir1/.*", false, []string{key})
 	resp, err = svc.Searcher.Search(sr)
 	if err != nil {
 		t.Error("unexpected error:", err)
@@ -140,7 +137,7 @@ func TestSearchWithPathRe(t *testing.T) {
 	}
 
 	// Test that the other similar condition also matches
-	sr = newSearchRequest("file in dir2", ".*/dir2/.*", false, []string{key})
+	sr = newSearchRequest("file in dir2", "dir2/.*", false, []string{key})
 	resp, _ = svc.Searcher.Search(sr)
 	if len(resp.Files) != 1 {
 		t.Error("got", len(resp.Files), "file matches, want 1")

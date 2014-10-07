@@ -1,9 +1,9 @@
 package main
 
 import (
-	"os"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/andaru/afind"
@@ -53,20 +53,56 @@ func newContext() (*ctx, error) {
 
 func search(context *ctx, query string) {
 	request := afind.SearchRequest{
-		Re:     query,
-		PathRe: *flagSearchPath,
+		Re:            query,
+		PathRe:        *flagSearchPath,
+		CaseSensitive: !*flagInsens,
 	}
 	sr, err := context.rpcClient.Search(request)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Errorf("error: %v\n", err)
 	}
 	printMatches(sr)
 }
 
-func repos(context *ctx) {
+func werr(err error) {
+	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+}
+
+func repos(context *ctx, key string) {
+	if key == "" {
+		// show list of repos
+		repos, err := context.rpcClient.GetAllRepos()
+		if err != nil {
+			werr(err)
+			return
+		}
+		for k, v := range repos.Repos {
+			fmt.Printf("Repo: %v\n", k)
+			fmt.Printf("  root: %v\n", v.Root)
+			fmt.Printf("  file (directory) count: %d (%d)\n", v.NumFiles, v.NumDirs)
+			fmt.Printf("  meta:\n")
+			for mk, mv := range v.Meta {
+				fmt.Printf("    %s=%s\n", mk, mv)
+			}
+			fmt.Println()
+		}
+	}
 }
 
 func index(context *ctx, key, root string, subdirs []string) error {
+	request := afind.IndexRequest{Key: key, Root: root, Dirs: subdirs}
+	ir, err := context.rpcClient.Index(request)
+	if err != nil {
+		werr(err)
+		return err
+	} else {
+		r, ok := ir.Repos[key]
+		if ok {
+			fmt.Printf("indexed [%v] meta: %v in %v\n",
+				key, r.Meta, ir.Elapsed)
+		}
+
+	}
 	return nil
 }
 
@@ -75,7 +111,8 @@ func doAfind() {
 	args := flag.Args()[1:]
 	context, err := newContext()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, 
+		werr(err)
+		return
 	}
 	switch command {
 	case "index":
@@ -90,9 +127,9 @@ func doAfind() {
 		subdirs := args[2:]
 		err := index(context, key, root, subdirs)
 		if err != nil {
-
+			werr(err)
+			return
 		}
-
 	case "search":
 		if len(args) == 1 {
 			search(context, args[0])
@@ -100,8 +137,11 @@ func doAfind() {
 			// invalid, print usage
 		}
 	case "repos":
+		var key string
 		if len(args) > 0 {
+			key = args[0]
 		}
+		repos(context, key)
 	default:
 		// usage
 	}
@@ -111,8 +151,8 @@ func printMatches(sr *afind.SearchResponse) {
 	for name, repos := range sr.Files {
 		for repo, matches := range repos {
 			for l, text := range matches {
-				fmt.Printf("%s:%s:%s:%s\n",
-					name, repo, l, text)
+				fmt.Printf("%s %s:%s:%s",
+					repo, name, l, text)
 			}
 		}
 	}

@@ -116,8 +116,7 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 				} else if info.Mode()&os.ModeType == 0 {
 					// TODO: handle archives
 					slotnum := numFiles % numShards
-					log.Debug("add path [%v] to shard %d", path, slotnum)
-					finalpath := strings.TrimPrefix(path, request.Root)
+					finalpath := strings.TrimPrefix(path, request.Root)[1:]
 					shards[slotnum].AddFileInRoot(request.Root, finalpath)
 					numFiles++
 				}
@@ -125,24 +124,34 @@ func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 				return nil
 			})
 	}
+	log.Debug("indexed %d files in %d directories", numFiles, numDirs)
 	err = lasterr
 
 	// Flush the indices
 	repo := newRepoFromIndexRequest(&request)
 	for _, ix := range shards {
-		if ix.DataBytes() > 0 {
-			ix.Flush()
-			log.Debug("flush data/index %vb/%vb", ix.DataBytes(), ix.IndexBytes())
-		}
+		ix.Flush()
 		repo.SizeData += ix.DataBytes()
 		repo.SizeIndex += ix.IndexBytes()
+	}
+	if err != nil {
+		repo.State = ERROR
+	} else {
+		repo.State = OK
 	}
 	repo.IndexPath = path.Join(request.Root, request.Key)
 	repo.NumFiles = numFiles
 	repo.NumDirs = numDirs
 	resp.Repos[repo.Key] = repo
+	// Set meta from defaults then override from request
+	for k, v := range config.DefaultRepoMeta {
+		repo.Meta[k] = v
+	}
+	for k, v := range request.Meta {
+		repo.Meta[k] = v
+	}
 	resp.Elapsed = time.Since(start)
-	log.Debug("setting %v=%#v", repo.Key, repo)
+	log.Debug("set Repo %+v", repo)
 	err = i.repos.Set(repo.Key, repo)
 	log.Info("Indexing %v finished in %v", request.Key, resp.Elapsed)
 	return

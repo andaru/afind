@@ -48,9 +48,9 @@ func setupConfig() {
 		c.DefaultRepoMeta[k] = v
 	}
 	// Maybe provide a default hostname
-	c.DefaultHostname()
+	_ = c.DefaultHostname()
 	// Setup and cache the "no indexing" path regular expression
-	c.SetNoIndex(*flagNoIndex)
+	_ = c.SetNoIndex(*flagNoIndex)
 	// Apply the configuration to the process
 	log.Debug("configuration %#v", c)
 	afind.SetConfig(c)
@@ -71,7 +71,8 @@ func main() {
 	a := afind.New()
 	err = a.Start()
 	if err != nil {
-		log.Fatal(err)
+		log.Error("%v", err)
+	} else {
+		a.WaitForExit()
 	}
-	a.WaitForExit()
 }

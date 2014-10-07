@@ -1,5 +1,9 @@
 package afind
 
+import (
+	"time"
+)
+
 func (self *RpcService) Search(req SearchRequest, resp *SearchResponse) error {
 	// resp.Files = make(map[string]map[string]map[string]string)
 	r, err := self.Searcher.Search(req)
@@ -12,11 +16,13 @@ func (self *RpcService) Search(req SearchRequest, resp *SearchResponse) error {
 }
 
 func (self *RpcService) Index(req IndexRequest, response *IndexResponse) error {
+	start := time.Now()
 	repos, err := self.Indexer.Index(req)
 	if err != nil {
 		return err
 	}
 	response.Repos = repos.Repos
+	response.Elapsed = time.Since(start)
 	return err
 }
 
@@ -28,10 +34,6 @@ func (self *RpcService) GetRepo(key string, response *Repos) error {
 	}
 	response.Repos = repos
 	return nil
-}
-
-type Repos struct {
-	Repos map[string]*Repo
 }
 
 func (self *RpcService) GetRepos(keys []string, response *Repos) error {
@@ -46,27 +48,10 @@ func (self *RpcService) GetRepos(keys []string, response *Repos) error {
 	return nil
 }
 
-func (self *RpcService) GetPrefixRepos(prefix string, response *Repos) error {
-	repos := make(map[string]*Repo)
-	self.repos.ForEachSuffix(prefix, getSearchIterFunc(&repos))
-	response.Repos = repos
-	return nil
-}
-
-func getSearchIterFunc(repos *map[string]*Repo) iterFunc {
-	return func(key string, value interface{}) bool {
-		if v, ok := value.(*Repo); ok {
-			t := *repos
-			t[key] = v
-			return true
-		}
-		return false
-	}
-}
-
-func (self *RpcService) GetAllRepos(_ interface{}, response *Repos) error {
+func (self *RpcService) GetAllRepos(_ bool, response *Repos) error {
 	repos := make(map[string]*Repo)
 	self.repos.ForEach(func(key string, value interface{}) bool {
+		log.Debug("key=%v value=%v", key, value)
 		if v, ok := value.(*Repo); ok {
 			repos[key] = v
 		} else {

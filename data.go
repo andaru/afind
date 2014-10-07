@@ -3,8 +3,6 @@ package afind
 import (
 	"errors"
 	"fmt"
-	"path"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -41,6 +39,7 @@ func (b ByteSize) String() string {
 type Repo struct {
 	Key       string            // Unique key
 	IndexPath string            // Path to the .afindex file covering this Repo
+	Root      string            // Root path (under which Dirs are rooted)
 	Meta      map[string]string // User configurable metadata for this Repo
 	Dirs      []string          // Directories contained within this Repo
 	RepoMeta                    // additional metadata about the repo
@@ -80,33 +79,19 @@ func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 }
 
 func newRepoFromIndexRequest(request *IndexRequest) *Repo {
-	repo := *newRepo(request.Key, "", request.Meta)
+	repo := newRepo(request.Key, "", request.Meta)
 	repo.NumShards = config.NumShards
+	repo.Root = request.Root
 	copy(repo.Dirs, request.Dirs)
-	return &repo
+	return repo
 }
 
-func getShardRequestKey(i int, r *IndexRequest) string {
-	return fmt.Sprintf("%s_%02d", r.Key, i)
+type Repos struct {
+	Repos map[string]*Repo
 }
 
-func getIndexPrefix(r *IndexRequest) string {
-	if config.IndexInRepo {
-		return r.Root
-	}
-	return config.IndexRoot
-}
-
-func getIndexPath(i int, r *IndexRequest) string {
-	prefix := getIndexPrefix(r)
-	// Try to make the path absolute
-	if absprefix, err := filepath.Abs(prefix); err == nil {
-		prefix = absprefix
-	} else {
-		log.Error("Failed to absolute path:", prefix)
-	}
-	return fmt.Sprintf("%s.%s",
-		path.Join(prefix, getShardRequestKey(i, r)), indexPathSuffix)
+func newRepos() *Repos {
+	return &Repos{Repos: make(map[string]*Repo)}
 }
 
 // Command line 'flag' types used by both afind (CLI tool) and afindd

@@ -2,7 +2,6 @@ package afind
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"os"
 	"path"
@@ -12,8 +11,6 @@ import (
 
 	"github.com/andaru/codesearch/index"
 	"github.com/andaru/codesearch/regexp"
-	"github.com/golang/glog"
-	"strings"
 )
 
 type searcher struct {
@@ -25,7 +22,6 @@ func newSearcher(repos KeyValueStorer) *searcher {
 }
 
 func merge(in *SearchRepoResponse, out *SearchResponse) {
-	// todo
 	for file, _ := range in.Matches {
 		if _, ok := out.Files[file]; !ok {
 			out.Files[file] = make(map[string]map[string]string)
@@ -43,16 +39,17 @@ func merge(in *SearchRepoResponse, out *SearchResponse) {
 func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	var err error
 	sr := newSearchResponse()
-	glog.Infof("SEARCH %v", request)
+	log.Info("Search %+v", request)
 
 	start := time.Now()
 
+	// Select repos to search based
 	repos := make(map[string]*Repo)
 	for _, key := range request.RepoKeys {
-		s.repos.ForEachSuffix(key, getSearchIterFunc(&repos))
+		if value := s.repos.Get(key); value != nil {
+			repos[key] = value.(*Repo)
+		}
 	}
-
-	glog.Infof("Searching %d repos %v", len(repos), repos)
 
 	if len(repos) == 0 {
 		// Search all repos
@@ -63,20 +60,28 @@ func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	}
 
 	if len(repos) == 0 {
-		return nil, errors.New("no repos")
+		return nil, newNoRepoAvailableError()
 	}
+
+	log.Debug("searching %d repos", len(repos))
 
 	// Search specific repos concurrently
 	ch := make(chan *SearchRepoResponse)
 	total := 0
 	for _, repo := range repos {
-		total++
-		go func(r *Repo) {
-			newSr := newSearchRepoResponse()
-			newSr, err = s.searchOne(r, request)
-			ch <- newSr
-		}(repo)
+		shards, err := findShards(repo.IndexPath)
+		if err != nil {
+		}
+		for _, shard := range shards {
+			total++
+			go func(sh string, r *Repo) {
+				newSr := newSearchRepoResponse()
+				newSr, err = s.searchOne(sh, r, request)
+				ch <- newSr
+			}(shard, repo)
+		}
 	}
+
 	timeout := time.After(30 * time.Second)
 	for total > 0 {
 		select {
@@ -87,15 +92,17 @@ func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 			total--
 		}
 	}
-	sr.ElapsedNs = time.Since(start).Nanoseconds()
+	since := time.Since(start)
+	sr.ElapsedNs = since.Nanoseconds()
+	log.Info("Search %+v complete in %v", request, since)
 	return sr, err
 }
 
-func (s *searcher) searchOne(repo *Repo, request SearchRequest) (
+func (s *searcher) searchOne(fname string, repo *Repo, request SearchRequest) (
 	*SearchRepoResponse, error) {
 
 	g := newGrep(repo)
-	reporesp, err := g.searchRepo(&request)
+	reporesp, err := g.searchRepo(fname, &request)
 	reporesp.Repo = repo
 	return reporesp, err
 }
@@ -117,34 +124,13 @@ func newGrep(repo *Repo) *grep {
 	return &grep{repo: repo}
 }
 
-const (
-	dotIndexPathSuffix = "." + indexPathSuffix
-)
-
 func findShards(prefix string) ([]string, error) {
-	var err error
-	shards := make([]string, 0)
-	dir := path.Dir(prefix)
-	_ = filepath.Walk(dir, func(p string, i os.FileInfo, werr error) error {
-		if werr != nil {
-			err = werr
-		}
-		if strings.HasPrefix(p, prefix) && strings.HasSuffix(
-			p, dotIndexPathSuffix) {
-			// likely index path
-			shards = append(shards, p)
-		}
-		return nil
-	})
-	log.Debug("findShards found %+v", shards)
-	return shards, err
+	results, err := filepath.Glob(prefix + "*.afindex")
+	return results, err
 }
 
-func (s *grep) searchRepo(request *SearchRequest) (
+func (s *grep) searchRepo(fname string, request *SearchRequest) (
 	resp *SearchRepoResponse, err error) {
-
-	fname := s.repo.IndexPath
-	resp = newSearchRepoResponse()
 
 	// Setup the RE2 expression text based on request options
 	pattern := "(?m)" + request.Re
@@ -164,6 +150,8 @@ func (s *grep) searchRepo(request *SearchRequest) (
 			return
 		}
 	}
+
+	resp = newSearchRepoResponse()
 
 	// Open the index file
 	ix, err := index.Open(fname)
@@ -194,13 +182,12 @@ func (s *grep) searchRepo(request *SearchRequest) (
 
 	for _, id_ := range post {
 		name := ix.Name(id_)
-		log.Debug("posting match %v", name)
 		numlines, matches, err := s.grepFile(name)
 		resp.Matches[name] = matches
 		resp.NumLines = numlines
 		if err != nil {
 			s.err = err
-			glog.Error(name, err)
+			log.Error("%s: %v", name, err)
 		}
 	}
 
@@ -208,12 +195,13 @@ func (s *grep) searchRepo(request *SearchRequest) (
 }
 
 func (s *grep) grepFile(filename string) (int, map[string]string, error) {
-	f, err := os.Open(filename)
+	fname := path.Join(s.repo.Root, filename)
+	f, err := os.Open(fname)
 	if err != nil {
 		return 0, nil, err
 	}
 	defer f.Close()
-	return s.reader(f, filename)
+	return s.reader(f, fname)
 }
 
 var nl = []byte{'\n'}

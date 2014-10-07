@@ -237,8 +237,8 @@ func TestGetAllRepos(t *testing.T) {
 	}
 	seen := make(map[string]bool)
 	for k, v := range repos.Repos {
-		if !strings.HasPrefix(v.IndexPath, "key") {
-			t.Error("want 'key' at prefix to v.IndexPath which is",
+		if !strings.Contains(v.IndexPath, "/repo1/key") {
+			t.Error("want '/repo1/key' in v.IndexPath which is",
 				v.IndexPath)
 		} else {
 			seen[k] = true
@@ -249,67 +249,62 @@ func TestGetAllRepos(t *testing.T) {
 	}
 }
 
-/// Test indexing via the actual rpc server
-func TestGetPrefixRepos(t *testing.T) {
-	addr := ":30303"
-	rs := newDb()
-	svc := newService(rs)
-	rpcsvc := newRpcService(svc)
-	svr := rpc.NewServer()
-	svr.RegisterName("Afind", rpcsvc)
-	l, e := net.Listen("tcp", addr)
-	if e != nil {
-		log.Fatal("listen error:", e)
-	}
-	go svr.Accept(l)
+// /// Test indexing via the actual rpc server
+// func TestGetPrefixRepos(t *testing.T) {
+// 	addr := ":30303"
+// 	rs := newDb()
+// 	svc := newService(rs)
+// 	rpcsvc := newRpcService(svc)
+// 	svr := rpc.NewServer()
+// 	svr.RegisterName("Afind", rpcsvc)
+// 	l, e := net.Listen("tcp", addr)
+// 	if e != nil {
+// 		log.Fatal("listen error:", e)
+// 	}
+// 	go svr.Accept(l)
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	cwd, err := os.Getwd()
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	ir := newIndexRequest("key1",
-		path.Join(cwd, "./testdata/repo1/"), []string{"dir1"})
-	ir2 := newIndexRequest("key2",
-		path.Join(cwd, "./testdata/repo1/"), []string{"dir2"})
-	ir3 := newIndexRequest("key3",
-		path.Join(cwd, "./testdata/repo1/"), []string{"."})
+// 	ir := newIndexRequest("key1",
+// 		path.Join(cwd, "./testdata/repo1/"), []string{"dir1"})
+// 	ir2 := newIndexRequest("key2",
+// 		path.Join(cwd, "./testdata/repo1/"), []string{"dir2"})
+// 	ir3 := newIndexRequest("key3",
+// 		path.Join(cwd, "./testdata/repo1/"), []string{"."})
 
-	client, cerr := NewRpcClient(addr)
-	if cerr != nil {
-		t.Fatal(cerr)
-	}
+// 	client, cerr := NewRpcClient(addr)
+// 	if cerr != nil {
+// 		t.Fatal(cerr)
+// 	}
 
-	client.Index(ir)
-	client.Index(ir2)
-	client.Index(ir3)
+// 	client.Index(ir)
+// 	client.Index(ir2)
+// 	client.Index(ir3)
 
-	repos, err := client.GetPrefixRepos("key")
-	if err != nil {
-		t.Error("unexpected error:", err)
-	}
+// 	length := len(repos.Repos)
+// 	size := rs.Size()
 
-	length := len(repos.Repos)
-	size := rs.Size()
+// 	if length != size {
+// 		t.Error(length, "!=", size)
+// 	}
 
-	if length != size {
-		t.Error(length, "!=", size)
-	}
+// 	if len(repos.Repos) != 3 {
+// 		t.Error("got", len(repos.Repos), "repos, want 3")
+// 	}
 
-	if len(repos.Repos) != 3 {
-		t.Error("got", len(repos.Repos), "repos, want 3")
-	}
-
-	seen := make(map[string]bool)
-	for k, v := range repos.Repos {
-		if !strings.HasPrefix(v.IndexPath, "key") {
-			t.Error("want 'key' at prefix to v.IndexPath which is",
-				v.IndexPath)
-		} else {
-			seen[k] = true
-		}
-	}
-	if len(seen) != 3 {
-		t.Error("got", len(seen), "repos, want 2")
-	}
-}
+// 	seen := make(map[string]bool)
+// 	for k, v := range repos.Repos {
+// 		if !strings.HasPrefix(v.IndexPath, "key") {
+// 			t.Error("want 'key' at prefix to v.IndexPath which is",
+// 				v.IndexPath)
+// 		} else {
+// 			seen[k] = true
+// 		}
+// 	}
+// 	if len(seen) != 3 {
+// 		t.Error("got", len(seen), "repos, want 2")
+// 	}
+// }

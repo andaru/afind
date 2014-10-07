@@ -6,27 +6,6 @@ import (
 
 // Error types
 
-// General API error
-type ApiError struct {
-	eType string
-	msg   string
-}
-
-func newApiError(typ, msg string) *ApiError {
-	return &ApiError{eType: typ, msg: msg}
-}
-
-func (e *ApiError) Error() string {
-	return e.eType + `:` + e.msg
-}
-
-func IsApiError(e error) bool {
-	if _, ok := e.(*ApiError); ok {
-		return true
-	}
-	return false
-}
-
 // Index is already available
 type IndexAvailableError struct {
 	key string
@@ -64,6 +43,24 @@ func (e ValueError) Error() string {
 
 func IsValueError(e error) bool {
 	if _, ok := e.(*ValueError); ok {
+		return true
+	}
+	return false
+}
+
+// No repositories were available to search in
+type NoRepoAvailableError struct{}
+
+func newNoRepoAvailableError() *NoRepoAvailableError {
+	return &NoRepoAvailableError{}
+}
+
+func (e NoRepoAvailableError) Error() string {
+	return "No Repo available to search"
+}
+
+func IsNoRepoAvailableError(e error) bool {
+	if _, ok := e.(*NoRepoAvailableError); ok {
 		return true
 	}
 	return false

@@ -35,8 +35,14 @@ func (client *RpcClient) Search(request SearchRequest) (*SearchResponse, error) 
 	return sr, err
 }
 
-func (client *RpcClient) GetPrefixRepos(prefix string) (*Repos, error) {
-	r := Repos{Repos: make(map[string]*Repo)}
-	err := client.Call("Afind.GetPrefixRepos", prefix, &r)
-	return &r, err
+func (client *RpcClient) GetRepo(key string) (*Repos, error) {
+	repos := newRepos()
+	err := client.Call("Afind.GetRepo", key, repos)
+	return repos, err
+}
+
+func (client *RpcClient) GetAllRepos() (*Repos, error) {
+	repos := newRepos()
+	err := client.Call("Afind.GetAllRepos", true, repos)
+	return repos, err
 }

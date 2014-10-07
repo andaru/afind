@@ -1,7 +1,6 @@
 package afind
 
 import (
-	"bytes"
 	"sync"
 
 	"github.com/andaru/go-art"
@@ -24,8 +23,6 @@ type KeyValueStorer interface {
 
 	// Iteration primitives
 	ForEach(f iterFunc)
-	// For each value matching any key with this prefix
-	ForEachSuffix(keyPrefix string, f iterFunc)
 }
 
 func (d *db) Size() int {
@@ -76,21 +73,6 @@ func (d *db) ForEach(f iterFunc) {
 			}
 		}
 	}
-}
-
-func (d *db) ForEachSuffix(prefix string, ifunc iterFunc) {
-	d.RLock()
-	defer d.RUnlock()
-
-	bPrefix := []byte(prefix)
-	d.rt.Each(func(node *art.ArtNode) {
-		if node.IsLeaf() && node.IsMatchPrefix(bPrefix) {
-			key := string(bytes.TrimRight(node.Key(), "\000"))
-			if value := d.get(key); value != nil {
-				ifunc(key, value)
-			}
-		}
-	})
 }
 
 func newDb() *db {
