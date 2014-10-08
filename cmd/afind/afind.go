@@ -84,12 +84,8 @@ func index(context *ctx, key, root string, subdirs []string) error {
 	if err != nil {
 		return err
 	} else {
-		r, ok := ir.Repos[key]
-		if ok {
-			fmt.Printf("indexed [%v] meta: %v in %v\n",
-				key, r.Meta, ir.Elapsed)
-		}
-
+		fmt.Printf("indexed [%v] meta: %v in %v\n",
+			ir.Repo.Key, ir.Repo.Meta, ir.Elapsed)
 	}
 	return nil
 }
