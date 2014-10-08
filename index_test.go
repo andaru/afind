@@ -61,21 +61,13 @@ func TestIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal("unexpected error:", err)
 	}
-
-	if len(resp.Repos) != 1 {
-		t.Errorf("Want 1 repo, got %d repos", len(resp.Repos))
+	if resp.Repo.SizeData == 0 {
+		t.Error("want >0 bytes data")
 	}
-	for _, resprepo := range resp.Repos {
-		// we indexed no files
-		if resprepo.SizeData == 0 {
-			t.Error("want >0 bytes data")
-		}
-		if resprepo.SizeIndex < 1 {
-			t.Error("want >0 bytes index")
-		}
-		if v, ok := resprepo.Meta["project"]; !ok || v != "Foo" {
-			t.Error("Didn't get meta back")
-		}
-		break
+	if resp.Repo.SizeIndex < 1 {
+		t.Error("want >0 bytes index")
+	}
+	if v, ok := resp.Repo.Meta["project"]; !ok || v != "Foo" {
+		t.Error("Didn't get meta back")
 	}
 }

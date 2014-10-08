@@ -22,13 +22,12 @@ func (self *RpcService) Index(req IndexRequest, response *IndexResponse) error {
 	if err != nil {
 		return err
 	}
-	response.Repos = repos.Repos
+	response.Repo = repos.Repo
 	response.Elapsed = time.Since(start)
 	return err
 }
 
 func (self *RpcService) GetRepo(key string, response *Repo) error {
-	log.Debug("GetRepo key=%v", key)
 	repo := self.Service.repos.Get(key)
 	if repo != nil {
 		r := repo.(*Repo)
@@ -39,7 +38,6 @@ func (self *RpcService) GetRepo(key string, response *Repo) error {
 }
 
 func (self *RpcService) GetRepos(keys []string, response *Repos) error {
-	log.Debug("GetRepos keys=%v", keys)
 	repos := make(map[string]*Repo)
 	for _, key := range keys {
 		repo := self.Service.repos.Get(key)

@@ -42,16 +42,13 @@ type Repo struct {
 	Root      string            // Root path (under which Dirs are rooted)
 	Meta      map[string]string // User configurable metadata for this Repo
 	Dirs      []string          // Directories contained within this Repo
-	RepoMeta                    // additional metadata about the repo
-	State     RepoState         //
-}
+	State     RepoState         // Current repository indexing state
 
-// Indexing statistics for a repo. Generated during Index() calls.
-type RepoMeta struct {
-	NumDirs   int    // Number of directories indexed
-	NumFiles  int    // Number of files indexed
-	SizeIndex uint32 // Size of the source index file in MB (10^6 bytes)
-	SizeData  int64  // Size of the data indexed by the Repo in bytes
+	// Metadata produced during indexing
+	NumDirs   int      // Number of directories indexed
+	NumFiles  int      // Number of files indexed
+	SizeIndex ByteSize // Size of index
+	SizeData  ByteSize // Size of the source data
 }
 
 type RepoState int
@@ -64,11 +61,24 @@ const (
 	ERROR    // not available for searching
 )
 
+func (rs RepoState) String() string {
+	switch {
+	case rs == INDEXING:
+		return "INDEXING"
+	case rs == OK:
+		return "OK"
+	case rs == ERROR:
+		return "ERROR"
+	}
+	return "NULL"
+}
+
 func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 	r := &Repo{
 		Key:       key,
 		IndexPath: uriIndex,
 		Meta:      make(map[string]string),
+		Dirs:      make([]string, 0),
 	}
 	for k, v := range meta {
 		r.Meta[k] = v
@@ -157,16 +167,9 @@ type IndexRequest struct {
 	Meta map[string]string // metadata applied to all new repos
 }
 
-// The union of the Repo and RepoMeta types.
-// Returned in the IndexResponse by Indexer.Index().
-type repoPlusStats struct {
-	*Repo
-	*RepoMeta
-}
-
 // The response to calls to Indexer.Index.
 type IndexResponse struct {
-	Repos   map[string]*Repo
+	Repo    *Repo
 	Elapsed time.Duration
 	// todo: errors
 }
@@ -195,7 +198,7 @@ func newIndexRequestWithMeta(key, root string, dirs []string,
 }
 
 func newIndexResponse() *IndexResponse {
-	return &IndexResponse{Repos: make(map[string]*Repo)}
+	return &IndexResponse{}
 }
 
 // A SearchRequest is the client request struct.

@@ -141,8 +141,8 @@ func (i *indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err err
 	repo := newRepoFromIndexRequest(&request)
 	for _, ix := range shards {
 		ix.Flush()
-		repo.SizeData += ix.DataBytes()
-		repo.SizeIndex += ix.IndexBytes()
+		repo.SizeData += ByteSize(ix.DataBytes())
+		repo.SizeIndex += ByteSize(ix.IndexBytes())
 	}
 	if err != nil {
 		repo.State = ERROR
@@ -152,15 +152,16 @@ func (i *indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err err
 	repo.IndexPath = path.Join(request.Root, request.Key)
 	repo.NumFiles = numFiles
 	repo.NumDirs = numDirs
-	resp.Repos[repo.Key] = repo
+	// resp.Repos[repo.Key] = repo
 	for k, v := range request.Meta {
 		repo.Meta[k] = v
 	}
+	resp.Repo = repo
 	resp.Elapsed = time.Since(start)
 	err = i.repos.Set(repo.Key, repo)
 	log.Info("local index %v (%d files/%d dirs) finished in %v",
 		request.Key, numFiles, numDirs, resp.Elapsed)
-	log.Debug("repo=%#v", repo)
+	log.Debug("repo=%#v", resp.Repo)
 	return
 }
 

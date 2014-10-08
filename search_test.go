@@ -42,13 +42,9 @@ func createRepo(t *testing.T,
 		}
 	}
 
-	var resp *IndexResponse
-	resp, err = svc.Indexer.Index(ir)
+	_, err = svc.Indexer.Index(ir)
 	if err != nil {
 		t.Fatal("Expected no error during createRepo, got:", err)
-	}
-	for k, r := range resp.Repos {
-		svc.repos.Set(k, r)
 	}
 	return dir
 }

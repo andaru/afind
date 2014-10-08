@@ -29,26 +29,18 @@ func TestRpcIndexFunction(t *testing.T) {
 		t.Error("unexpected error:", err)
 	}
 
-	if len(resp.Repos) != 1 {
-		t.Error("got", len(resp.Repos), "repos, want 1")
-	}
-
 	// there was one dir, so only use one shard
-	repo, ok := resp.Repos[key]
-	if !ok {
-		t.Fatal("did not find expected key:", key)
-	}
-	if repo.SizeData < 1 {
+	if resp.Repo.SizeData < 1 {
 		t.Error("got zero size data")
 	}
-	if repo.SizeIndex < 1 {
+	if resp.Repo.SizeIndex < 1 {
 		t.Error("got zero size index")
 	}
-	if repo.NumDirs != 3 {
-		t.Error("got", repo.NumDirs, "dirs, want 3")
+	if resp.Repo.NumDirs != 3 {
+		t.Error("got", resp.Repo.NumDirs, "dirs, want 3")
 	}
-	if repo.NumFiles != 3 {
-		t.Error("got", repo.NumFiles, "files, want 3")
+	if resp.Repo.NumFiles != 3 {
+		t.Error("got", resp.Repo.NumFiles, "files, want 3")
 	}
 }
 
@@ -76,14 +68,11 @@ func TestRpcIndexWithServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := newIndexRequest(key, path.Join(cwd, "./testdata/repo1/"), []string{"."})
-	reply := IndexResponse{Repos: make(map[string]*Repo)}
+	reply := IndexResponse{}
 
 	err = client.Call("Afind.Index", args, &reply)
 	if err != nil {
 		t.Error("unexpected error:", err)
-	}
-	if len(reply.Repos) != 1 {
-		t.Error("got", len(reply.Repos), "repos, want 1")
 	}
 }
 
