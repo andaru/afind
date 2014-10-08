@@ -19,7 +19,7 @@ var (
 	flagRpcBind   = flag.String("rpc", ":30800", "RPC server bind addr")
 	flagHttpBind  = flag.String("http", ":30880", "HTTP server bind addr")
 	flagHttpsBind = flag.String("https", ":30880", "HTTP server bind addr")
-	flagNumShards = flag.Int("nshards", 8,
+	flagNumShards = flag.Int("nshards", 4,
 		"Maximum number of Repo shards created per indexing request")
 	flagMeta = make(afind.FlagSSMap)
 
@@ -72,15 +72,10 @@ func main() {
 	setupConfig()
 
 	af := afind.New()
-	err = af.Start()
-
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "failed to start:")
-	} else {
-		err = af.WaitForExit()
-	}
-
+	af.Start()
+	err = af.WaitForExit()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(3)
 	}
 }

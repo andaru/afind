@@ -10,7 +10,7 @@ import (
 
 func newServer(t *testing.T) net.Listener {
 	repos := newDb()
-	svc := newService(repos)
+	svc := NewService(repos)
 	rpcsvc := newRpcService(svc)
 	svr := rpc.NewServer()
 	svr.RegisterName("Afind", rpcsvc)
@@ -69,14 +69,14 @@ func TestRpcClientIndex(t *testing.T) {
 	}
 }
 
-func TestRpcClientSearchRepo(t *testing.T) {
-	newServer(t)
-}
+// func TestRpcClientSearch(t *testing.T) {
+// 	newServer(t)
+// }
 
-func TestRpcClientGetRepo(t *testing.T) {
-	newServer(t)
-}
+// func TestRpcClientGetRepo(t *testing.T) {
+// 	newServer(t)
+// }
 
-func TestRpcClientGetAllRepos(t *testing.T) {
-	newServer(t)
-}
+// func TestRpcClientGetAllRepos(t *testing.T) {
+// 	newServer(t)
+// }

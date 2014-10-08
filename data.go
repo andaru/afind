@@ -231,27 +231,33 @@ func newSearchRequest(re, pathRe string, cs bool, repoKeys []string) SearchReque
 // Repo search; that is, its results have been merged and ranked by
 // the afind service
 type SearchResponse struct {
-	Files map[string]map[string]map[string]string
+	Files           map[string]map[string]map[string]string
+	Errors          map[string]string // Error message per Repo
+	NumLinesMatched int64             // total number of lines with 1 or more matches
+	Elapsed         time.Duration     // Time elapsed performing the search
+}
 
-	NumLinesMatched int64 // total number of lines with 1 or more matches
-	Elapsed         time.Duration
-
-	// todo: errors
+func newSearchResponse() *SearchResponse {
+	return &SearchResponse{
+		Files:  make(map[string]map[string]map[string]string),
+		Errors: make(map[string]string),
+	}
 }
 
 type SearchRepoResponse struct {
 	Repo     *Repo
 	Matches  map[string]map[string]string
 	NumLines int // total number of lines scanned
+	Error    string
 }
 
 func newSearchRepoResponse() *SearchRepoResponse {
 	return &SearchRepoResponse{Matches: make(map[string]map[string]string)}
 }
 
-func newSearchResponse() *SearchResponse {
-	return &SearchResponse{
-		Files:           make(map[string]map[string]map[string]string),
-		NumLinesMatched: 0,
+func newSearchRepoResponseFromError(err error) *SearchRepoResponse {
+	return &SearchRepoResponse{
+		Matches: make(map[string]map[string]string),
+		Error:   err.Error(),
 	}
 }

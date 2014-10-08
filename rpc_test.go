@@ -20,7 +20,7 @@ func TestRpcIndexFunction(t *testing.T) {
 	ir := newIndexRequest(key, path.Join(cwd, "./testdata/repo1/"), []string{"."})
 
 	repos := newDb()
-	svc := newService(repos)
+	svc := NewService(repos)
 	rpcsvc := newRpcService(svc)
 	resp := newIndexResponse()
 	err = rpcsvc.Index(ir, resp)
@@ -47,7 +47,7 @@ func TestRpcIndexFunction(t *testing.T) {
 // Test using an RPC server
 func TestRpcIndexWithServer(t *testing.T) {
 	repos := newDb()
-	svc := newService(repos)
+	svc := NewService(repos)
 	rpcsvc := newRpcService(svc)
 	svr := rpc.NewServer()
 	svr.RegisterName("Afind", rpcsvc)
@@ -79,7 +79,7 @@ func TestRpcIndexWithServer(t *testing.T) {
 // Test Index and GetRepo (includes SetRepo calls from Index)
 func TestGetRepo(t *testing.T) {
 	rs := newDb()
-	svc := newService(rs)
+	svc := NewService(rs)
 	rpcsvc := newRpcService(svc)
 
 	cwd, err := os.Getwd()
@@ -124,7 +124,7 @@ func TestGetRepo(t *testing.T) {
 
 func TestReindexFailure(t *testing.T) {
 	rs := newDb()
-	svc := newService(rs)
+	svc := NewService(rs)
 	rpcsvc := newRpcService(svc)
 
 	key := "SAME KEY"
@@ -155,7 +155,7 @@ func TestReindexFailure(t *testing.T) {
 
 func TestRpcSearch(t *testing.T) {
 	rs := newDb()
-	svc := newService(rs)
+	svc := NewService(rs)
 	rpcsvc := newRpcService(svc)
 	key := "index1"
 	cwd, err := os.Getwd()
@@ -178,7 +178,7 @@ func TestRpcSearch(t *testing.T) {
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
-	if sresp.NumLinesMatched != 1 {
+	if sresp.NumLinesMatched != 2 {
 		t.Error("expected 1 line match, got", sresp.NumLinesMatched)
 	}
 }
@@ -190,7 +190,7 @@ func TestGetAllRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := newService(newDb())
+	svc := NewService(newDb())
 	rpcsvc := newRpcService(svc)
 
 	ir := newIndexRequest("key1", path.Join(cwd, "./testdata/repo1/"),
@@ -239,7 +239,7 @@ func TestGetAllRepos(t *testing.T) {
 // func TestGetPrefixRepos(t *testing.T) {
 // 	addr := ":30303"
 // 	rs := newDb()
-// 	svc := newService(rs)
+// 	svc := NewService(rs)
 // 	rpcsvc := newRpcService(svc)
 // 	svr := rpc.NewServer()
 // 	svr.RegisterName("Afind", rpcsvc)

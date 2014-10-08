@@ -32,28 +32,37 @@ func newSearcherRemote(repos KeyValueStorer, address string) (*searcher, error) 
 	return s, err
 }
 
-func merge(in *SearchRepoResponse, out *SearchResponse) {
-	for file, _ := range in.Matches {
+func mergeResponse(in *SearchResponse, out *SearchResponse) {
+	for file, rmatches := range in.Files {
 		if _, ok := out.Files[file]; !ok {
 			out.Files[file] = make(map[string]map[string]string)
 		}
-		if _, ok := out.Files[file][in.Repo.Key]; !ok {
-			out.Files[file][in.Repo.Key] = make(map[string]string)
+		for repo, matches := range rmatches {
+			out.Files[file][repo] = matches
 		}
-		for line, text := range in.Matches[file] {
-			out.Files[file][in.Repo.Key][line] = text
-		}
-		out.NumLinesMatched++
+		// todo: make accurate for overlaps
+		out.NumLinesMatched += in.NumLinesMatched
 	}
 }
 
-func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
-	var err error
-	sr := newSearchResponse()
+func repoMetaMatchesSearch(repo *Repo, request *SearchRequest) bool {
+	for k, v := range request.Meta {
+		if rv, ok := repo.Meta[k]; ok {
+			if v == rv {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	log.Info("Search [%v] path: [%v] keys: %v cs: %v",
 		request.Re, request.PathRe, request.RepoKeys, request.CaseSensitive)
 
+	var err error
 	start := time.Now()
+	sr := newSearchResponse()
 
 	// Select repos to search based
 	repos := make(map[string]*Repo)
@@ -64,9 +73,12 @@ func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	}
 
 	if len(repos) == 0 {
-		// Search all repos
+		// Consider all repos
 		s.repos.ForEach(func(key string, value interface{}) bool {
-			repos[key] = value.(*Repo)
+			repo := value.(*Repo)
+			if repoMetaMatchesSearch(repo, &request) {
+				repos[key] = repo
+			}
 			return true
 		})
 	}
@@ -75,34 +87,39 @@ func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 		return nil, newNoRepoAvailableError()
 	}
 
-	// Search specific repos concurrently
-	ch := make(chan *SearchRepoResponse)
+	// Search repos concurrently
+	ch := make(chan *SearchResponse)
 	total := 0
+	log.Debug("search consulting %d repos", len(repos))
+
 	for _, repo := range repos {
-		shards, err := findShards(repo.IndexPath)
-		if err != nil {
-		}
-		for _, shard := range shards {
+		if isSearchLocal(repo) {
+			shards, _ := findShards(repo.IndexPath)
+			for _, shard := range shards {
+				total++
+				go func(sh string, r *Repo) {
+					newSr, _ := s.searchLocal(r, sh, request)
+					ch <- newSr
+				}(shard, repo)
+
+			}
+		} else {
 			total++
-			go func(sh string, r *Repo) {
-				newSr := newSearchRepoResponse()
-				if !isRemote(r) {
-					newSr, err = s.searchOneLocal(sh, r, request)
-				} else {
-					newSr, err = s.searchOneRemote(r, request)
-				}
+			go func() {
+				newSr, _ := s.searchRemote(repo, request)
 				ch <- newSr
-			}(shard, repo)
+			}()
 		}
 	}
 
+	log.Debug("search waiting for %d shards", total)
 	timeout := time.After(30 * time.Second)
 	for total > 0 {
 		select {
 		case <-timeout:
 			break
 		case newSr := <-ch:
-			merge(newSr, sr)
+			mergeResponse(newSr, sr)
 			total--
 		}
 	}
@@ -114,46 +131,50 @@ func (s *searcher) Search(request SearchRequest) (*SearchResponse, error) {
 
 func repoHost(repo *Repo) string {
 	host, ok := repo.Meta["hostname"]
-	if !ok {
-		return ""
+	if ok {
+		return host
 	}
-	return host
+	return ""
 }
 
-func isRemote(repo *Repo) bool {
-	ourhost, _ := config.DefaultRepoMeta["hostname"]
-	// len() works with both nil and emptry string
-	if len(ourhost) == 0 {
-		return false
-	}
-
-	theirhost := repoHost(repo)
-	if theirhost == "" {
-		return false
-	} else if ourhost != theirhost {
+func isSearchLocal(repo *Repo) bool {
+	localhost, _ := config.DefaultRepoMeta["hostname"]
+	if len(localhost) == 0 {
 		return true
 	}
-	return false
-}
-
-func (s *searcher) searchOneLocal(fname string, repo *Repo, request SearchRequest) (
-	reporesp *SearchRepoResponse, err error) {
-	g := newGrep(repo)
-	log.Debug("local search [%s]", fname)
-	reporesp, err = g.searchRepo(fname, &request)
-	reporesp.Repo = repo
-	return
-}
-
-func (s *searcher) searchOneRemote(repo *Repo, request SearchRequest) (
-	reporesp *SearchRepoResponse, err error) {
-	if s.client == nil {
-		return nil, newNoRpcClientError()
+	host := repoHost(repo)
+	if localhost != host {
+		return false
 	}
-	log.Debug("remote search host [%s]", repoHost(repo))
-	reporesp, err = s.client.SearchRepo(repo.Key, request)
-	reporesp.Repo = repo
+	return true
+}
+
+func (s *searcher) searchLocal(repo *Repo, fname string, request SearchRequest) (
+	resp *SearchResponse, err error) {
+
+	g := newGrep(repo, fname)
+	return g.searchRepo(&request)
+}
+
+func (s *searcher) searchRemote(repo *Repo, request SearchRequest) (
+	resp *SearchResponse, err error) {
+
+	if s.client == nil {
+		err = newNoRepoAvailableError()
+		return newPopSearchResponse(repo, err), err
+	}
+	request.RepoKeys = []string{repo.Key}
+	resp, err = s.client.Search(request)
+	if resp == nil {
+		resp = newPopSearchResponse(repo, err)
+	}
 	return
+}
+
+func newPopSearchResponse(repo *Repo, err error) *SearchResponse {
+	sr := newSearchResponse()
+	sr.Errors[repo.Key] = err.Error()
+	return sr
 }
 
 // A grep shadows the codesearch Grep
@@ -164,22 +185,24 @@ type grep struct {
 	regexp.Grep
 	buf []byte // private from regexp.Grep
 
-	repo *Repo
-	err  error
+	repo     *Repo
+	filename string
+	err      error
 }
 
 // Returns a new local RE2 grepper for this repository
-func newGrep(repo *Repo) *grep {
-	return &grep{repo: repo}
+func newGrep(repo *Repo, filename string) *grep {
+	return &grep{repo: repo, filename: filename}
 }
 
-func findShards(prefix string) ([]string, error) {
-	results, err := filepath.Glob(prefix + "*.afindex")
+// Returns a slice of paths found for a given Repo.IndexPath prefix
+func findShards(indexPath string) ([]string, error) {
+	results, err := filepath.Glob(indexPath + "*.afindex")
 	return results, err
 }
 
-func (s *grep) searchRepo(fname string, request *SearchRequest) (
-	resp *SearchRepoResponse, err error) {
+func (s *grep) searchRepo(request *SearchRequest) (
+	resp *SearchResponse, err error) {
 
 	// Setup the RE2 expression text based on request options
 	pattern := "(?m)" + request.Re
@@ -200,10 +223,10 @@ func (s *grep) searchRepo(fname string, request *SearchRequest) (
 		}
 	}
 
-	resp = newSearchRepoResponse()
+	resp = newSearchResponse()
 
 	// Open the index file
-	ix, err := index.Open(fname)
+	ix, err := index.Open(s.filename)
 	if os.IsNotExist(err) || os.IsPermission(err) {
 		return
 	}
@@ -232,12 +255,13 @@ func (s *grep) searchRepo(fname string, request *SearchRequest) (
 	for _, id_ := range post {
 		name := ix.Name(id_)
 		numlines, matches, gerr := s.grepFile(name)
-		resp.Matches[name] = matches
-		resp.NumLines = numlines
 		if gerr != nil {
 			err = gerr
-			log.Error("%s: %v", name, err)
+			log.Error(name, ": ", err)
 		}
+		resp.Files[name] = make(map[string]map[string]string)
+		resp.Files[name][s.repo.Key] = matches
+		resp.NumLinesMatched = int64(numlines)
 	}
 
 	return
@@ -312,8 +336,8 @@ func (s *grep) reader(r io.Reader, name string) (
 			lineno += countNL(buf[chunkStart:lineStart])
 			matches[strconv.Itoa(lineno)] = string(
 				buf[lineStart:lineEnd])
-			chunkStart = lineEnd
 			lineno++
+			chunkStart = lineEnd
 		}
 		if rerr == nil {
 			lineno += countNL(buf[chunkStart:end])
@@ -331,5 +355,5 @@ func (s *grep) reader(r io.Reader, name string) (
 	if err != nil {
 		return 0, nil, err
 	}
-	return lineno, matches, err
+	return lineno - 1, matches, err
 }

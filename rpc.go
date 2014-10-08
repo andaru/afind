@@ -1,12 +1,14 @@
 package afind
 
 import (
+	"net"
+	"net/rpc"
 	"time"
 )
 
-func (self *RpcService) Search(req SearchRequest, resp *SearchResponse) error {
+func (rs *rpcService) Search(req SearchRequest, resp *SearchResponse) error {
 	start := time.Now()
-	r, err := self.Searcher.Search(req)
+	r, err := rs.Searcher.Search(req)
 	if r != nil {
 		resp.Files = r.Files
 		resp.NumLinesMatched = r.NumLinesMatched
@@ -15,10 +17,10 @@ func (self *RpcService) Search(req SearchRequest, resp *SearchResponse) error {
 	return err
 }
 
-func (self *RpcService) Index(req IndexRequest, response *IndexResponse) error {
+func (rs *rpcService) Index(req IndexRequest, response *IndexResponse) error {
 	start := time.Now()
 	req = newIndexRequestWithMeta(req.Key, req.Root, req.Dirs, req.Meta)
-	repos, err := self.Indexer.Index(req)
+	repos, err := rs.Indexer.Index(req)
 	if err != nil {
 		return err
 	}
@@ -27,8 +29,8 @@ func (self *RpcService) Index(req IndexRequest, response *IndexResponse) error {
 	return err
 }
 
-func (self *RpcService) GetRepo(key string, response *Repo) error {
-	repo := self.Service.repos.Get(key)
+func (rs *rpcService) GetRepo(key string, response *Repo) error {
+	repo := rs.Service.repos.Get(key)
 	if repo != nil {
 		r := repo.(*Repo)
 		response = &(*r)
@@ -37,10 +39,10 @@ func (self *RpcService) GetRepo(key string, response *Repo) error {
 	return newNoRepoAvailableError()
 }
 
-func (self *RpcService) GetRepos(keys []string, response *Repos) error {
+func (rs *rpcService) GetRepos(keys []string, response *Repos) error {
 	repos := make(map[string]*Repo)
 	for _, key := range keys {
-		repo := self.Service.repos.Get(key)
+		repo := rs.Service.repos.Get(key)
 		if repo != nil {
 			repos[key] = repo.(*Repo)
 		}
@@ -49,9 +51,9 @@ func (self *RpcService) GetRepos(keys []string, response *Repos) error {
 	return nil
 }
 
-func (self *RpcService) GetAllRepos(_ bool, response *map[string]*Repo) error {
+func (rs *rpcService) GetAllRepos(_ bool, response *map[string]*Repo) error {
 	repos := make(map[string]*Repo)
-	self.repos.ForEach(func(key string, value interface{}) bool {
+	rs.repos.ForEach(func(key string, value interface{}) bool {
 		if v, ok := value.(*Repo); ok {
 			repos[key] = v
 		} else {
@@ -63,10 +65,28 @@ func (self *RpcService) GetAllRepos(_ bool, response *map[string]*Repo) error {
 	return nil
 }
 
-type RpcService struct {
+type rpcService struct {
 	*Service
+	svr *rpc.Server
 }
 
-func newRpcService(service *Service) *RpcService {
-	return &RpcService{service}
+func (rs *rpcService) start() error {
+	if config.RpcBind == "" {
+		return nil
+	}
+
+	var err error
+	if err = rs.svr.RegisterName("Afind", rs); err != nil {
+		log.Fatal("RPC server error:", err)
+	}
+	l, err := net.Listen("tcp", config.RpcBind)
+	if err == nil {
+		go rs.svr.Accept(l)
+		log.Info("Started RPC server at %s", config.RpcBind)
+	}
+	return err
+}
+
+func newRpcService(service *Service) *rpcService {
+	return &rpcService{service, rpc.NewServer()}
 }

@@ -52,7 +52,7 @@ func createRepo(t *testing.T,
 func TestSearchRepoBothDirs(t *testing.T) {
 	key := "TestSearchRepoBothDirs"
 	repos := newDb()
-	svc := newService(repos)
+	svc := NewService(repos)
 
 	defer os.RemoveAll(createRepo(t, svc, repo1, key, []string{"dir1", "dir2"}))
 
@@ -67,7 +67,7 @@ func TestSearchRepoBothDirs(t *testing.T) {
 	}
 
 	// Confirm we got the files we expected
-	want := []string{"dir1/file1", "dir2/file1"}
+	want := []string{"/dir1/file1", "/dir2/file1"}
 	got := make([]string, 0)
 	for k, _ := range resp.Files {
 		for _, wantk := range want {
@@ -77,14 +77,14 @@ func TestSearchRepoBothDirs(t *testing.T) {
 		}
 	}
 	if len(got) != 2 {
-		t.Error("got", got, "matching paths, want substrings ", want)
+		t.Error("got", resp.Files, "paths, want substrings ", want)
 	}
 }
 
 func TestSearchRepoEachDir(t *testing.T) {
 	key := "TestSearchRepoEachDir"
 	repos := newDb()
-	svc := newService(repos)
+	svc := NewService(repos)
 	defer os.RemoveAll(createRepo(t, svc, repo1, key, []string{"dir1", "dir2"}))
 
 	// Now search for things in just one dir
@@ -108,7 +108,7 @@ func TestSearchRepoEachDir(t *testing.T) {
 func TestSearchWithPathRe(t *testing.T) {
 	key := "TestSearchWithPathRe"
 	repos := newDb()
-	svc := newService(repos)
+	svc := NewService(repos)
 	defer os.RemoveAll(createRepo(t, svc, repo1, key, []string{"dir1", "dir2"}))
 
 	// Search for something that exists, but not in this dir

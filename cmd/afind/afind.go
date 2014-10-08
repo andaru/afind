@@ -183,6 +183,7 @@ func printMatches(sr *afind.SearchResponse) {
 func main() {
 	flag.Parse()
 	common.LoggerStderr()
+	logging.SetFormatter(logging.DefaultFormatter)
 
 	if len(flag.Args()) < 1 {
 		flag.Usage()

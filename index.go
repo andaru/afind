@@ -8,7 +8,6 @@ import (
 
 	"github.com/andaru/codesearch/index"
 	"strconv"
-	"strings"
 )
 
 const (
@@ -51,7 +50,7 @@ func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
 	return err
 }
 
-func (i *indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err error) {
+func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err error) {
 	log.Info("local index %v (%d sub dirs)", request.Key, len(request.Dirs))
 	start := time.Now()
 
@@ -61,8 +60,10 @@ func (i *indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err err
 	}
 
 	resp = newIndexResponse()
+	repo := newRepoFromIndexRequest(&request)
+
 	numShards := config.NumShards
-	if numShards == 0 {
+	if numShards < 1 {
 		numShards = 1
 	}
 
@@ -92,10 +93,11 @@ func (i *indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err err
 
 	numDirs := 0
 	numFiles := 0
+	advance := len(request.Root)
 
 	for _, path := range paths {
 		lasterr = filepath.Walk(path,
-			func(path string, info os.FileInfo, werr error) error {
+			func(p string, info os.FileInfo, werr error) error {
 				// log.Debug("walk path %v info=%+v", path, info)
 				if info == nil {
 					return nil
@@ -104,41 +106,47 @@ func (i *indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err err
 				// If a path regular expression was provided,
 				// only include files or whole directories
 				// that regular expression.
-				if reg != nil && reg.FindString(path) != "" {
+				if reg != nil && reg.FindString(p) != "" {
 					if info.IsDir() {
 						return filepath.SkipDir
 					}
 					return nil
 				}
+
 				// Skip excluded extensions and prefixes
-				if IndexPathExcludes.MatchFile(path) {
+				if IndexPathExcludes.MatchFile(p) {
 					if info.IsDir() {
 						return filepath.SkipDir
 					}
 					return nil
 				}
-				// Set the last error if we had an IO error walking
+				// Track the last walk error if set, then bail
 				if werr != nil {
 					err = werr
 					return nil
 				}
+
+				// trim the Repo Root path and trailing slash
+				finalpath := p[advance:]
+
 				if info.IsDir() {
+					// todo: track only dirs that have files
 					numDirs++
 				} else if info.Mode()&os.ModeType == 0 {
 					// TODO: handle archives
+
+					// add the file to this shard
 					slotnum := numFiles % numShards
-					finalpath := strings.TrimPrefix(path, request.Root)[1:]
-					shards[slotnum].AddFileInRoot(request.Root, finalpath)
+					shards[slotnum].AddFileInRoot(
+						request.Root, finalpath)
 					numFiles++
 				}
-				// TODO: count errors
 				return nil
 			})
 	}
 	err = lasterr
 
 	// Flush the indices
-	repo := newRepoFromIndexRequest(&request)
 	for _, ix := range shards {
 		ix.Flush()
 		repo.SizeData += ByteSize(ix.DataBytes())
@@ -159,13 +167,12 @@ func (i *indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err err
 	resp.Repo = repo
 	resp.Elapsed = time.Since(start)
 	err = i.repos.Set(repo.Key, repo)
-	log.Info("local index %v (%d files/%d dirs) finished in %v",
+	log.Info("index %s (%d/%d files/dirs) created in %v",
 		request.Key, numFiles, numDirs, resp.Elapsed)
-	log.Debug("repo=%#v", resp.Repo)
 	return
 }
 
-func (i *indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err error) {
+func (i indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err error) {
 	log.Debug("remote index host [%s]", indexRequestHost(&request))
 	if i.client == nil {
 		return nil, newNoRpcClientError()
@@ -174,34 +181,38 @@ func (i *indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err er
 	return resp, err
 }
 
-func (i *indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
+func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	// Set meta from defaults then override from request
 	for k, v := range config.DefaultRepoMeta {
 		request.Meta[k] = v
 	}
 
-	if isIndexRequestLocal(&request) {
-		return i.indexLocal(request)
+	if isIndexLocal(&request) {
+		resp, err = i.indexLocal(request)
 	} else {
-		return i.indexRemote(request)
+		resp, err = i.indexRemote(request)
 	}
+	if err == nil {
+		log.Info("index %v (%s/%s index/data) created in %v",
+			request.Key, resp.Repo.SizeIndex, resp.Repo.SizeData, resp.Elapsed)
+	}
+	return
 }
 
 func indexRequestHost(request *IndexRequest) string {
 	host, ok := request.Meta["hostname"]
-	if !ok {
-		return ""
-	} else {
+	if ok {
 		return host
 	}
+	return ""
 }
 
-func isIndexRequestLocal(request *IndexRequest) bool {
-	host := indexRequestHost(request)
+func isIndexLocal(request *IndexRequest) bool {
 	localhost, _ := config.DefaultRepoMeta["hostname"]
 	if len(localhost) == 0 {
 		return true
 	}
+	host := indexRequestHost(request)
 	if localhost != host {
 		return false
 	}

@@ -2,37 +2,50 @@ package afind
 
 import (
 	"encoding/json"
-	"net"
+	"net/http"
 
-	"github.com/gocraft/web"
+	"github.com/julienschmidt/httprouter"
 )
 
-type Context struct {
-	repos    KeyValueStorer
-	indexer  Indexer
-	searcher Searcher
+// Web service definition
+
+type webService struct {
+	*Service
+	router *httprouter.Router
 }
 
-func startHttpServer(addr string, be *Service) (*web.Router, error) {
-	if addr == "" {
-		panic("no bind address passed")
+func (ws *webService) start() error {
+	if ws.router == nil {
+		panic("HTTP URL router not yet setup")
 	}
-	app := web.New(be)
-	app.Get("/repos/:key", GetRepo)
-	app.Post("/repos/:key", PostRepo)
-	app.Get("/repos", GetAllRepos)
 
-	l, err := net.Listen("tcp", addr)
-	if err == nil {
-		for {
-			go func() {
-				l.Accept()
-			}()
+	var err error
+	addr := config.HttpBind
+	if addr != "" {
+		go func() {
+			err = http.ListenAndServe(addr, ws.router)
+		}()
+		if err == nil {
+			log.Info("Started HTTP server on %s", addr)
 		}
 	}
-
-	return nil, err
+	return err
 }
+
+func (ws *webService) setupHandlers() {
+	ws.router.GET("/repo/:key", ws.GetRepo)
+	ws.router.GET("/repos", ws.GetAllRepos)
+	ws.router.POST("/repo/:key", ws.PostRepo)
+	// ws.router.POST("/search", )
+}
+
+func newWebService(service *Service) *webService {
+	ws := &webService{service, httprouter.New()}
+	ws.setupHandlers()
+	return ws
+}
+
+// helper
 
 func httpError(t, msg, remedy string) *map[string]string {
 	n := make(map[string]string)
@@ -44,33 +57,40 @@ func httpError(t, msg, remedy string) *map[string]string {
 
 // Request Handlers
 
-func GetRepo(c *Context, rw web.ResponseWriter, req *web.Request) {
-	key := req.PathParams["key"]
+func (ws *webService) GetRepo(
+	rw http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+
+	key := ps.ByName("key")
 	enc := json.NewEncoder(rw)
-	if repo := c.repos.Get(key); repo != nil {
+	if repo := ws.repos.Get(key); repo != nil {
 		rw.WriteHeader(200)
-		enc.Encode(repo)
+		_ = enc.Encode(repo)
 	} else {
 		rw.WriteHeader(404)
 		// error
 	}
 }
 
-func GetAllRepos(c *Context, rw web.ResponseWriter, req *web.Request) {
+func (ws *webService) GetAllRepos(
+	rw http.ResponseWriter, req *http.Request, _ httprouter.Params) {
+
 	repos := make(map[string]*Repo)
 	enc := json.NewEncoder(rw)
-	c.repos.ForEach(func(key string, value interface{}) bool {
+	ws.repos.ForEach(func(key string, value interface{}) bool {
 		if value != nil {
 			repos[key] = value.(*Repo)
 		}
 		return true
 	})
 	rw.WriteHeader(200)
-	enc.Encode(repos)
+	_ = enc.Encode(repos)
 }
 
-func PostRepo(c *Context, rw web.ResponseWriter, req *web.Request) {
-	key := req.PathParams["key"]
+func (ws *webService) PostRepo(
+	rw http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+
+	key := ps.ByName("key")
+
 	dec := json.NewDecoder(req.Body)
 	enc := json.NewEncoder(rw)
 
@@ -78,27 +98,27 @@ func PostRepo(c *Context, rw web.ResponseWriter, req *web.Request) {
 	var ir IndexRequest
 	if err := dec.Decode(&ir); err != nil {
 		rw.WriteHeader(403)
-		enc.Encode(
+		_ = enc.Encode(
 			httpError("invalid_request", "bad request format",
 				"Fix the request format"))
 		return
 	}
 
 	// Generate the index
-	indexResponse, err := c.indexer.Index(ir)
+	indexResponse, err := ws.Indexer.Index(ir)
 
-	if serr := c.repos.Set(key, indexResponse); serr == nil {
+	if serr := ws.repos.Set(key, indexResponse); serr == nil {
 		if err == nil {
 			rw.WriteHeader(200)
-			enc.Encode(indexResponse)
+			_ = enc.Encode(indexResponse)
 		} else {
 			rw.WriteHeader(500)
-			enc.Encode(
+			_ = enc.Encode(
 				httpError("indexing_error", err.Error(), ""))
 		}
 	} else {
 		rw.WriteHeader(501)
-		enc.Encode(
+		_ = enc.Encode(
 			httpError("store_set_error", "repos", "Try again"))
 	}
 }

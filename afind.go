@@ -1,36 +1,27 @@
 package afind
 
-import (
-	"net"
-	"net/http"
-	"net/rpc"
-
-	"github.com/gocraft/web"
-)
-
 // This file composes the different system parts (defined as
 // interfaces in data.go) into the overall Afind system.
 
+// The Service components in the Afind system, used
+// by server interfaces such as the HTTP(S) WebService
+// or the Gob RPC over TCP RpcService
 type Service struct {
 	repos    KeyValueStorer
-	Indexer  indexer
-	Searcher searcher
+	Indexer  Indexer
+	Searcher Searcher
 }
 
-func newService(repos KeyValueStorer) *Service {
+func NewService(repos KeyValueStorer) *Service {
 	return &Service{repos, *newIndexer(repos), *newSearcher(repos)}
 }
 
 // The Afind system
 type System struct {
-	// Interfaces that comprise the system
-	Indexer
-	Searcher
-
+	service    Service
 	quit       chan error
-	rpcServer  *rpc.Server
-	httpServer *http.Server
-	repos      KeyValueStorer
+	rpcService *rpcService
+	webService *webService
 }
 
 // Composes and returns a new Afind system.
@@ -39,11 +30,17 @@ type System struct {
 // Test code can call this function with test implementations of the
 // interfaces used in the system struct.
 func composeSystem(repos KeyValueStorer, i Indexer, s Searcher) *System {
-	return &System{
+	service := Service{
+		repos:    repos,
 		Indexer:  i,
 		Searcher: s,
-		quit:     make(chan error),
-		repos:    repos,
+	}
+
+	return &System{
+		service:    service,
+		quit:       make(chan error),
+		rpcService: newRpcService(&service),
+		webService: newWebService(&service),
 	}
 }
 
@@ -55,53 +52,27 @@ func New() *System {
 	return composeSystem(repos, indexer, searcher)
 }
 
-func (s *System) Start() error {
-	// var err error
-	// err = s.startHttpServer()
-	// if err != nil {
-	// 	glog.Error("Error starting HTTP server:", err)
-	// 	return err
-	// }
-	s.setupRpcServer()
-	return s.startRpcServer()
+func (s *System) Start() {
+	var err error
+
+	err = s.rpcService.start()
+	if err != nil {
+		log.Fatalf("RPC server error: %v", err)
+	}
+
+	err = s.webService.start()
+	if err != nil {
+		log.Fatalf("Web server error: %v", err)
+	}
+	log.Info("Afind system started")
 }
 
-func (s *System) startHttpServer() error {
-	if config.HttpBind == "" {
-		return nil
-	}
-	app := web.New(s)
-	app.Get("/repos/:key", GetRepo)
-	app.Post("/repos/:key", PostRepo)
-	go http.ListenAndServe(config.HttpBind, app)
-	return nil
+func (s *System) ExitWithError(err error) {
+	go func() {
+		s.quit <- err
+	}()
 }
 
 func (s *System) WaitForExit() error {
 	return <-s.quit
-}
-
-func (s *System) setupRpcServer() {
-	svc := newService(s.repos)
-	rpcsvc := newRpcService(svc)
-	s.rpcServer = rpc.NewServer()
-	if err := s.rpcServer.RegisterName("Afind", rpcsvc); err != nil {
-		log.Fatal(err)
-	}
-
-}
-
-func (s *System) startRpcServer() error {
-	if s.rpcServer == nil {
-		s.setupRpcServer()
-	}
-
-	l, err := net.Listen("tcp", config.RpcBind)
-	if err == nil {
-		log.Info("rpc server started, bound to '%s'", config.RpcBind)
-		go s.rpcServer.Accept(l)
-	} else {
-		s.rpcServer = nil
-	}
-	return err
 }

@@ -22,13 +22,6 @@ func (client *RpcClient) Index(request IndexRequest) (*IndexResponse, error) {
 	return indexResponse, err
 }
 
-func (client *RpcClient) SearchRepo(key string, request SearchRequest) (
-	*SearchRepoResponse, error) {
-	sr := newSearchRepoResponse()
-	err := client.Call("Afind.SearchRepo", request, sr)
-	return sr, err
-}
-
 func (client *RpcClient) Search(request SearchRequest) (*SearchResponse, error) {
 	sr := newSearchResponse()
 	err := client.Call("Afind.Search", request, sr)
