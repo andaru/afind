@@ -48,8 +48,8 @@ func setupConfig() {
 	for k, v := range flagMeta {
 		c.DefaultRepoMeta[k] = v
 	}
-	// Maybe provide a default hostname
-	_ = c.DefaultHostname()
+	// Provide a default hostname from the OS, else "localhost"
+	_ = c.DefaultHost()
 	// Setup and cache the "no indexing" path regular expression
 	_ = c.SetNoIndex(*flagNoIndex)
 	// Apply the configuration to the process

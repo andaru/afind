@@ -1,9 +1,7 @@
 package afind
 
 import (
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -108,54 +106,6 @@ func newRepoFromIndexRequest(request *IndexRequest) *Repo {
 	return repo
 }
 
-type Repos struct {
-	Repos map[string]*Repo
-}
-
-func NewRepos() *Repos {
-	return &Repos{Repos: make(map[string]*Repo)}
-}
-
-// Command line 'flag' types used by both afind (CLI tool) and afindd
-// (daemon)
-
-// Slice of strings flag
-type FlagStringSlice []string
-
-func (ss *FlagStringSlice) String() string {
-	return fmt.Sprint(*ss)
-}
-
-func (ss *FlagStringSlice) Set(value string) error {
-	for _, v := range strings.Split(value, ",") {
-		*ss = append(*ss, v)
-	}
-	return nil
-}
-
-func (ss *FlagStringSlice) AsSliceOfString() []string {
-	return *ss
-}
-
-// String/string map flag
-// This is used for user defined repo metadata by afind and afindd
-type FlagSSMap map[string]string
-
-// Returns a go default formatted form of the metadata map flag
-func (ssmap *FlagSSMap) String() string {
-	return fmt.Sprint(*ssmap)
-}
-
-func (ssmap *FlagSSMap) Set(value string) error {
-	kv := strings.Split(value, "=")
-	if len(kv) != 2 {
-		return errors.New("Argument must be in the form 'key=value'")
-	}
-	s := *ssmap
-	s[kv[0]] = kv[1]
-	return nil
-}
-
 // A Searcher defines the front-end search interface.
 //
 // A Search() is executed without any Repos being selected by
@@ -171,8 +121,6 @@ type Searcher interface {
 type Indexer interface {
 	Index(request IndexRequest) (*IndexResponse, error)
 }
-
-// Composition of interfaces to form the major parts of the system.
 
 // An IndexRequest is the metadata for creating one or more Repo.
 type IndexRequest struct {

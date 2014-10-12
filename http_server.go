@@ -36,7 +36,7 @@ func (ws *webService) setupHandlers() {
 	ws.router.GET("/repo/:key", ws.GetRepo)
 	ws.router.GET("/repos", ws.GetAllRepos)
 	ws.router.POST("/repo/:key", ws.PostRepo)
-	// ws.router.POST("/search", )
+	ws.router.POST("/search", ws.Search)
 }
 
 func newWebService(service *Service) *webService {
@@ -67,7 +67,6 @@ func (ws *webService) GetRepo(
 		_ = enc.Encode(repo)
 	} else {
 		rw.WriteHeader(404)
-		// error
 	}
 }
 
@@ -90,7 +89,6 @@ func (ws *webService) PostRepo(
 	rw http.ResponseWriter, req *http.Request, ps httprouter.Params) {
 
 	key := ps.ByName("key")
-
 	dec := json.NewDecoder(req.Body)
 	enc := json.NewEncoder(rw)
 
@@ -120,5 +118,34 @@ func (ws *webService) PostRepo(
 		rw.WriteHeader(501)
 		_ = enc.Encode(
 			httpError("store_set_error", "repos", "Try again"))
+	}
+}
+
+func (ws *webService) Search(
+	rw http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+
+	_ = ps.ByName("key")
+	dec := json.NewDecoder(req.Body)
+	enc := json.NewEncoder(rw)
+
+	sr := SearchRequest{}
+	if err := dec.Decode(&sr); err != nil {
+		rw.WriteHeader(403)
+		_ = enc.Encode(
+			httpError("invalid_request", "bad request format",
+				"Fix the request format"))
+		return
+	}
+
+	sresp, err := ws.Searcher.Search(sr)
+	if err == nil {
+		if err == nil {
+			rw.WriteHeader(200)
+			_ = enc.Encode(sresp)
+		} else {
+			rw.WriteHeader(500)
+			_ = enc.Encode(
+				httpError("search_error", err.Error(), ""))
+		}
 	}
 }
