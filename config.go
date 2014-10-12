@@ -3,6 +3,7 @@ package afind
 import (
 	"os"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -55,7 +56,8 @@ func (c *Config) TimeoutSearch() <-chan time.Time {
 
 func (c *Config) DefaultPort() {
 	if _, ok := c.DefaultRepoMeta["port.rpc"]; !ok {
-		c.DefaultRepoMeta["port.rpc"] = c.RpcBind
+		port := c.RpcBind[strings.Index(c.RpcBind, ":")+1:]
+		c.DefaultRepoMeta["port.rpc"] = port
 	}
 }
 
