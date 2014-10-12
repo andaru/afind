@@ -85,7 +85,6 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	// Build the master path list from request.Dirs, ignoring absolute paths
 	paths := make([]string, 0)
 	for _, p := range request.Dirs {
-		resp.Repo.ReqDirs = append(resp.Repo.ReqDirs, p)
 		if p == "" {
 			continue
 		}
@@ -106,8 +105,6 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	var lasterr error
 	reg := config.NoIndex()
 
-	dirmap := make(map[string]*struct{})
-	dirval := &struct{}{}
 	numDirs := 0
 	numFiles := 0
 	advance := len(request.Root)
@@ -152,10 +149,6 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 					numFiles++
 					// TODO: handle archives
 
-					// track the directory
-					// containing this file
-					dirmap[filepath.Dir(finalpath)] = dirval
-
 					// add the file to this shard
 					slotnum := numFiles % numShards
 					shards[slotnum].AddFileInRoot(
@@ -165,10 +158,6 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 			})
 	}
 	err = lasterr
-
-	for dir, _ := range dirmap {
-		resp.Repo.Dirs = append(resp.Repo.Dirs, dir)
-	}
 
 	// Flush the indices
 	for _, ix := range shards {
@@ -184,16 +173,14 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	repo.IndexPath = indexPathPrefix(&request)
 	repo.NumFiles = numFiles
 	repo.NumDirs = numDirs
-	log.Debug("updating metadata")
 	for k, v := range request.Meta {
-		log.Debug("k: %v v:%+v", k, v)
 		repo.Meta[k] = v
 	}
 	resp.Repo = &repo
 	resp.Elapsed = time.Since(start)
 	err = i.repos.Set(repo.Key, &repo)
-	log.Debug("index %s (%s data, %s index)",
-		request.Key, repo.SizeData, repo.SizeIndex)
+	log.Debug("index %s [meta %v] (%s data, %s index)",
+		request.Key, repo.Meta, repo.SizeData, repo.SizeIndex)
 	log.Info("index %s (%d/%d files/dirs) created in %v",
 		request.Key, numFiles, numDirs, resp.Elapsed)
 	return

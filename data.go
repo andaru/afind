@@ -34,7 +34,7 @@ func (b ByteSize) String() string {
 	case b >= KB:
 		return fmt.Sprintf("%.2fKB", b/KB)
 	}
-	return fmt.Sprintf("%.2fB", b)
+	return fmt.Sprintf("%dB", b.AsInt64())
 }
 
 func (b ByteSize) MarshalText() ([]byte, error) {
@@ -48,13 +48,11 @@ func (b ByteSize) MarshalJSON() ([]byte, error) {
 
 // A Repo represents a single indexed repository of source code.
 type Repo struct {
-	Key       string            `json:"key"`          // Unique key
-	IndexPath string            `json:"index_path"`   // Path to the .afindex file covering this Repo
-	Root      string            `json:"root"`         // Root path (under which Dirs are rooted)
-	Meta      map[string]string `json:"meta"`         // User configurable metadata for this Repo
-	ReqDirs   []string          `json:"request_dirs"` // Original request sub directories
-	Dirs      []string          `json:"dirs"`         // Sub directories contained within the archive
-	State     RepoState         `json:"state"`        // Current repository indexing state
+	Key       string            `json:"key"`        // Unique key
+	IndexPath string            `json:"index_path"` // Path to the .afindex file covering this Repo
+	Root      string            `json:"root"`       // Root path (under which Dirs are rooted)
+	Meta      map[string]string `json:"meta"`       // User configurable metadata for this Repo
+	State     RepoState         `json:"state"`      // Current repository indexing state
 
 	// Metadata produced during indexing
 	NumDirs   int      `json:"num_dirs"`          // Number of directories indexed
@@ -90,8 +88,6 @@ func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 		Key:       key,
 		IndexPath: uriIndex,
 		Meta:      make(map[string]string),
-		ReqDirs:   make([]string, 0),
-		Dirs:      make([]string, 0),
 	}
 	for k, v := range meta {
 		r.Meta[k] = v
@@ -102,7 +98,6 @@ func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 func newRepoFromIndexRequest(request *IndexRequest) *Repo {
 	repo := newRepo(request.Key, "", request.Meta)
 	repo.Root = request.Root
-	copy(repo.Dirs, request.Dirs)
 	return repo
 }
 
