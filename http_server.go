@@ -14,28 +14,26 @@ type webService struct {
 	router *httprouter.Router
 }
 
-func (ws *webService) start() error {
+func (ws *webService) start() (err error) {
 	if ws.router == nil {
 		panic("HTTP URL router not yet setup")
 	}
 
-	var err error
-	addr := config.HttpBind
-	if addr != "" {
+	if ws.config.HttpBind != "" {
 		go func() {
-			err = http.ListenAndServe(addr, ws.router)
+			err = http.ListenAndServe(ws.config.HttpBind, ws.router)
 		}()
 		if err == nil {
-			log.Info("Started HTTP server at %s", addr)
+			log.Info("Started HTTP server at %s", ws.config.HttpBind)
 		}
 	}
-	return err
+	return
 }
 
 func (ws *webService) setupHandlers() {
 	ws.router.GET("/repo/:key", ws.GetRepo)
-	ws.router.GET("/repos", ws.GetAllRepos)
-	ws.router.POST("/repo/:key", ws.PostRepo)
+	ws.router.GET("/repo", ws.GetAllRepos)
+	ws.router.POST("/repo", ws.PostRepo)
 	ws.router.POST("/search", ws.Search)
 }
 
@@ -55,7 +53,7 @@ func httpError(t, msg, remedy string) *map[string]string {
 	return &n
 }
 
-// Request Handlers
+// Webservice Request Handlers
 
 func (ws *webService) GetRepo(
 	rw http.ResponseWriter, req *http.Request, ps httprouter.Params) {
@@ -86,9 +84,8 @@ func (ws *webService) GetAllRepos(
 }
 
 func (ws *webService) PostRepo(
-	rw http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+	rw http.ResponseWriter, req *http.Request, _ httprouter.Params) {
 
-	key := ps.ByName("key")
 	dec := json.NewDecoder(req.Body)
 	enc := json.NewEncoder(rw)
 
@@ -97,27 +94,20 @@ func (ws *webService) PostRepo(
 	if err := dec.Decode(&ir); err != nil {
 		rw.WriteHeader(403)
 		_ = enc.Encode(
-			httpError("invalid_request", "bad request format",
-				"Fix the request format"))
+			httpError("invalid_request", "badly formatted JSON request",
+				"Provide a valid JSON IndexRequest"))
 		return
 	}
 
 	// Generate the index
 	indexResponse, err := ws.Indexer.Index(ir)
-
-	if serr := ws.repos.Set(key, indexResponse); serr == nil {
-		if err == nil {
-			rw.WriteHeader(200)
-			_ = enc.Encode(indexResponse)
-		} else {
-			rw.WriteHeader(500)
-			_ = enc.Encode(
-				httpError("indexing_error", err.Error(), ""))
-		}
+	if err == nil {
+		rw.WriteHeader(200)
+		_ = enc.Encode(indexResponse)
 	} else {
-		rw.WriteHeader(501)
+		rw.WriteHeader(500)
 		_ = enc.Encode(
-			httpError("store_set_error", "repos", "Try again"))
+			httpError("indexing_error", err.Error(), ""))
 	}
 }
 

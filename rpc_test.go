@@ -10,14 +10,28 @@ import (
 	"testing"
 )
 
-func setupRpcTest() {
+func cfgRpcTest() Config {
+	config := Config{}
 	config.IndexInRepo = false
 	config.IndexRoot = `/tmp/afind`
 	config.SetNoIndex(`willnotmatchanything`)
+	if err := makeIndexRoot(config); err != nil {
+		log.Fatalf("Could not make IndexRoot: %v", err)
+	}
+	return config
+}
+
+func endRpcTest(config *Config) {
+	if err := os.RemoveAll(config.IndexRoot); err != nil {
+		log.Critical(err.Error())
+	}
 }
 
 // Test outside of the RPC framework
 func TestRpcIndexFunction(t *testing.T) {
+	cfg := cfgRpcTest()
+	defer endRpcTest(&cfg)
+
 	key := "key"
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -26,7 +40,7 @@ func TestRpcIndexFunction(t *testing.T) {
 	ir := newIndexRequest(key, path.Join(cwd, "./testdata/repo1/"), []string{"."})
 
 	repos := newDb()
-	svc := NewService(repos)
+	svc := NewService(repos, cfgRpcTest())
 	rpcsvc := newRpcService(svc)
 	resp := newIndexResponse()
 	err = rpcsvc.Index(ir, resp)
@@ -35,7 +49,6 @@ func TestRpcIndexFunction(t *testing.T) {
 		t.Error("unexpected error:", err)
 	}
 
-	// there was one dir, so only use one shard
 	if resp.Repo.SizeData < 1 {
 		t.Error("got zero size data")
 	}
@@ -52,8 +65,11 @@ func TestRpcIndexFunction(t *testing.T) {
 
 // Test using an RPC server
 func TestRpcIndexWithServer(t *testing.T) {
+	cfg := cfgRpcTest()
+	defer endRpcTest(&cfg)
+
 	repos := newDb()
-	svc := NewService(repos)
+	svc := NewService(repos, cfgRpcTest())
 	rpcsvc := newRpcService(svc)
 	svr := rpc.NewServer()
 	svr.RegisterName("Afind", rpcsvc)
@@ -84,8 +100,11 @@ func TestRpcIndexWithServer(t *testing.T) {
 
 // Test Index and GetRepo (includes SetRepo calls from Index)
 func TestGetRepo(t *testing.T) {
+	cfg := cfgRpcTest()
+	defer endRpcTest(&cfg)
+
 	rs := newDb()
-	svc := NewService(rs)
+	svc := NewService(rs, cfgRpcTest())
 	rpcsvc := newRpcService(svc)
 
 	cwd, err := os.Getwd()
@@ -116,9 +135,8 @@ func TestGetRepo(t *testing.T) {
 		t.Error("unexpected error:", err)
 	}
 	for k, v := range repos {
-		t.Logf("repos k:%+v v:%+v", k, v)
-		if !strings.Contains(v.IndexPath, "/repo1/key") {
-			t.Error("want '/repo1/key' in v.IndexPath which is",
+		if !strings.Contains(v.IndexPath, path.Join(cfg.IndexRoot, "key")) {
+			t.Error("want '*/key' in v.IndexPath which is",
 				v.IndexPath)
 		} else {
 			seen[k] = true
@@ -130,8 +148,11 @@ func TestGetRepo(t *testing.T) {
 }
 
 func TestReindexFailure(t *testing.T) {
+	cfg := cfgRpcTest()
+	defer endRpcTest(&cfg)
+
 	rs := newDb()
-	svc := NewService(rs)
+	svc := NewService(rs, cfgRpcTest())
 	rpcsvc := newRpcService(svc)
 
 	key := "SAME KEY"
@@ -158,11 +179,15 @@ func TestReindexFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "Cannot replace existing") {
 		t.Error("error message [", err.Error(), "] was unexpected")
 	}
+	endRpcTest(&cfg)
 }
 
 func TestRpcSearch(t *testing.T) {
+	cfg := cfgRpcTest()
+	defer endRpcTest(&cfg)
+
 	rs := newDb()
-	svc := NewService(rs)
+	svc := NewService(rs, cfgRpcTest())
 	rpcsvc := newRpcService(svc)
 	key := "index1"
 	cwd, err := os.Getwd()
@@ -192,12 +217,14 @@ func TestRpcSearch(t *testing.T) {
 
 // Test Index and GetRepo (includes SetRepo calls from Index)
 func TestGetAllRepos(t *testing.T) {
+	cfg := cfgRpcTest()
+	defer endRpcTest(&cfg)
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	svc := NewService(newDb())
+	svc := NewService(newDb(), cfgRpcTest())
 	rpcsvc := newRpcService(svc)
 
 	ir := newIndexRequest("key1", path.Join(cwd, "./testdata/repo1/"),
@@ -230,8 +257,8 @@ func TestGetAllRepos(t *testing.T) {
 	}
 	seen := make(map[string]bool)
 	for k, v := range repos {
-		if !strings.Contains(v.IndexPath, "/repo1/key") {
-			t.Error("want '/repo1/key' in v.IndexPath which is",
+		if !strings.Contains(v.IndexPath, path.Join(cfg.IndexRoot, "key")) {
+			t.Error("want '*/key' in v.IndexPath which is",
 				v.IndexPath)
 		} else {
 			seen[k] = true
@@ -241,63 +268,3 @@ func TestGetAllRepos(t *testing.T) {
 		t.Error("got", len(seen), "repos, want 3")
 	}
 }
-
-// /// Test indexing via the actual rpc server
-// func TestGetPrefixRepos(t *testing.T) {
-// 	addr := ":30303"
-// 	rs := newDb()
-// 	svc := NewService(rs)
-// 	rpcsvc := newRpcService(svc)
-// 	svr := rpc.NewServer()
-// 	svr.RegisterName("Afind", rpcsvc)
-// 	l, e := net.Listen("tcp", addr)
-// 	if e != nil {
-// 		log.Fatal("listen error:", e)
-// 	}
-// 	go svr.Accept(l)
-
-// 	cwd, err := os.Getwd()
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-
-// 	ir := newIndexRequest("key1",
-// 		path.Join(cwd, "./testdata/repo1/"), []string{"dir1"})
-// 	ir2 := newIndexRequest("key2",
-// 		path.Join(cwd, "./testdata/repo1/"), []string{"dir2"})
-// 	ir3 := newIndexRequest("key3",
-// 		path.Join(cwd, "./testdata/repo1/"), []string{"."})
-
-// 	client, cerr := NewRpcClient(addr)
-// 	if cerr != nil {
-// 		t.Fatal(cerr)
-// 	}
-
-// 	client.Index(ir)
-// 	client.Index(ir2)
-// 	client.Index(ir3)
-
-// 	length := len(repos.Repos)
-// 	size := rs.Size()
-
-// 	if length != size {
-// 		t.Error(length, "!=", size)
-// 	}
-
-// 	if len(repos.Repos) != 3 {
-// 		t.Error("got", len(repos.Repos), "repos, want 3")
-// 	}
-
-// 	seen := make(map[string]bool)
-// 	for k, v := range repos.Repos {
-// 		if !strings.HasPrefix(v.IndexPath, "key") {
-// 			t.Error("want 'key' at prefix to v.IndexPath which is",
-// 				v.IndexPath)
-// 		} else {
-// 			seen[k] = true
-// 		}
-// 	}
-// 	if len(seen) != 3 {
-// 		t.Error("got", len(seen), "repos, want 2")
-// 	}
-// }

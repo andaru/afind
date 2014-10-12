@@ -1,6 +1,7 @@
 package afind
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -55,10 +56,28 @@ type Repo struct {
 	State     RepoState         `json:"state"`      // Current repository indexing state
 
 	// Metadata produced during indexing
-	NumDirs   int      `json:"num_dirs"`          // Number of directories indexed
-	NumFiles  int      `json:"num_files"`         // Number of files indexed
-	SizeIndex ByteSize `json:"size_index,string"` // Size of index
-	SizeData  ByteSize `json:"size_data,string"`  // Size of the source data
+	NumDirs   int     `json:"num_dirs,string"`   // Number of directories indexed
+	NumFiles  int     `json:"num_files,string"`  // Number of files indexed
+	SizeIndex float64 `json:"size_index,string"` // Size of index
+	SizeData  float64 `json:"size_data,string"`  // Size of the source data
+	sizeIndex ByteSize
+	sizeData  ByteSize
+
+	// Number of shards written to disk, an optimisation to avoid a glob
+	numShards int
+}
+
+// used to avoid infinite recursion in UnmarshalJSON
+type repo Repo
+
+func (r *Repo) UnmarshalJSON(b []byte) (err error) {
+	newr := repo{Meta: make(map[string]string)}
+
+	err = json.Unmarshal(b, &newr)
+	if err == nil {
+		*r = Repo(newr)
+	}
+	return
 }
 
 type RepoState int
@@ -95,10 +114,14 @@ func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 	return r
 }
 
-func newRepoFromIndexRequest(request *IndexRequest) *Repo {
+func newRepoFromIndexRequest(request *IndexRequest) Repo {
 	repo := newRepo(request.Key, "", request.Meta)
 	repo.Root = request.Root
-	return repo
+	return *repo
+}
+
+func newEmptyRepo() *Repo {
+	return &Repo{Meta: make(map[string]string)}
 }
 
 // A Searcher defines the front-end search interface.
@@ -129,7 +152,6 @@ type IndexRequest struct {
 type IndexResponse struct {
 	Repo    *Repo
 	Elapsed time.Duration
-	// todo: errors
 }
 
 func newIndexRequest(key, root string, dirs []string) IndexRequest {

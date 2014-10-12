@@ -84,24 +84,6 @@ func IsNoRepoAvailableError(e error) bool {
 	return false
 }
 
-// No valid directories were passed
-type NoDirsError struct{}
-
-func newNoDirsError() *NoDirsError {
-	return &NoDirsError{}
-}
-
-func (e NoDirsError) Error() string {
-	return "No repositories available"
-}
-
-func IsNoDirsError(e error) bool {
-	if _, ok := e.(*NoDirsError); ok {
-		return true
-	}
-	return false
-}
-
 // No RPC client available for remote searches
 type NoRpcClientError struct{}
 

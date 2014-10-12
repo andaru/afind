@@ -8,9 +8,27 @@ import (
 	"testing"
 )
 
-func newServer(t *testing.T) net.Listener {
+func cfgRpcClientTest() Config {
+	config := Config{}
+	config.RpcBind = ":"
+	config.IndexInRepo = false
+	config.IndexRoot = `/tmp/afind.rpc_client.test`
+	config.NumShards = 2
+	if err := makeIndexRoot(config); err != nil {
+		log.Fatalf("Could not make IndexRoot: %v", err)
+	}
+	return config
+}
+
+func endRpcClientTest(config *Config) {
+	if err := os.RemoveAll(config.IndexRoot); err != nil {
+		log.Critical(err.Error())
+	}
+}
+
+func newServer(t *testing.T, c *Config) net.Listener {
 	repos := newDb()
-	svc := NewService(repos)
+	svc := NewService(repos, *c)
 	rpcsvc := newRpcService(svc)
 	svr := rpc.NewServer()
 	svr.RegisterName("Afind", rpcsvc)
@@ -30,7 +48,10 @@ func closeServer(t *testing.T, listener net.Listener) {
 }
 
 func TestRpcClientIndex(t *testing.T) {
-	server := newServer(t)
+	cfg := cfgRpcClientTest()
+	defer endRpcClientTest(&cfg)
+	server := newServer(t, &cfg)
+
 	client, err := NewRpcClient(server.Addr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -70,13 +91,19 @@ func TestRpcClientIndex(t *testing.T) {
 }
 
 // func TestRpcClientSearch(t *testing.T) {
-// 	newServer(t)
+//	cfg := cfgRpcClientTest()
+//	defer endRpcClientTest(&cfg)
+//	server := newServer(t, &cfg)
 // }
 
 // func TestRpcClientGetRepo(t *testing.T) {
-// 	newServer(t)
+//	cfg := cfgRpcClientTest()
+//	defer endRpcClientTest(&cfg)
+//	server := newServer(t, &cfg)
 // }
 
 // func TestRpcClientGetAllRepos(t *testing.T) {
-// 	newServer(t)
+//	cfg := cfgRpcClientTest()
+//	defer endRpcClientTest(&cfg)
+//	server := newServer(t, &cfg)
 // }

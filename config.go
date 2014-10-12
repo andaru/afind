@@ -3,6 +3,7 @@ package afind
 import (
 	"os"
 	"regexp"
+	"time"
 )
 
 // Afind configuration file definition and handling
@@ -15,21 +16,47 @@ type Config struct {
 	RpcBind     string
 	NumShards   int // the number of Repo shards to build per index request
 
+	timeoutIndex  int
+	timeoutSearch int
+
 	// default repository metadata
 	// manipulated by e.g., DefaultHost()
 	DefaultRepoMeta map[string]string
 
 	noindexStr string // regular expression of files not to index
 	noIndexRe  *regexp.Regexp
+
+	DbFile string // If non-empty, the JSON file containing the config backing store
 }
 
 // The global configuration object
 var (
-	config *Config
+	zzconfig *Config
 )
 
-func init() {
-	config = &Config{DefaultRepoMeta: make(map[string]string)}
+const (
+	defaultTimeoutIndex  = 1800 * time.Second
+	defaultTimeoutSearch = 30 * time.Second
+)
+
+func (c *Config) TimeoutIndex() <-chan time.Time {
+	if c.timeoutIndex == 0 {
+		return time.After(defaultTimeoutIndex)
+	}
+	return time.After(time.Duration(c.timeoutIndex) * time.Second)
+}
+
+func (c *Config) TimeoutSearch() <-chan time.Time {
+	if c.timeoutSearch == 0 {
+		return time.After(defaultTimeoutSearch)
+	}
+	return time.After(time.Duration(c.timeoutSearch) * time.Second)
+}
+
+func (c *Config) DefaultPort() {
+	if _, ok := c.DefaultRepoMeta["port.rpc"]; !ok {
+		c.DefaultRepoMeta["port.rpc"] = c.RpcBind
+	}
 }
 
 func (c *Config) DefaultHost() error {
@@ -40,8 +67,6 @@ func (c *Config) DefaultHost() error {
 	hn, err := os.Hostname()
 	if err == nil {
 		c.DefaultRepoMeta["host"] = hn
-	} else {
-		c.DefaultRepoMeta["host"] = "localhost"
 	}
 	return err
 }
@@ -59,12 +84,4 @@ func (c *Config) NoIndex() *regexp.Regexp {
 		_ = c.SetNoIndex(c.noindexStr)
 	}
 	return c.noIndexRe
-}
-
-func SetConfig(c Config) {
-	config = &c
-}
-
-func GetConfig() *Config {
-	return config
 }

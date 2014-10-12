@@ -14,13 +14,21 @@ var (
 	}
 )
 
-func setupSearchTest() {
-	config.IndexInRepo = true
-	config.SetNoIndex(`.afindex$`)
+func cfgSearchTest() Config {
+	config := Config{}
+	config.IndexInRepo = false
+	config.IndexRoot = `/tmp/afind.index.test`
+	config.NumShards = 2
+	if err := makeIndexRoot(config); err != nil {
+		log.Fatalf("Could not make IndexRoot: %v", err)
+	}
+	return config
 }
 
-func init() {
-	setupSearchTest()
+func endSearchTest(config *Config) {
+	if err := os.RemoveAll(config.IndexRoot); err != nil {
+		log.Critical(err.Error())
+	}
 }
 
 func createRepo(t *testing.T,
@@ -54,9 +62,12 @@ func createRepo(t *testing.T,
 }
 
 func TestSearchRepoBothDirs(t *testing.T) {
+	cfg := cfgSearchTest()
+	defer endSearchTest(&cfg)
+
 	key := "TestSearchRepoBothDirs"
 	repos := newDb()
-	svc := NewService(repos)
+	svc := NewService(repos, cfgRpcTest())
 
 	defer os.RemoveAll(createRepo(t, svc, repo1, key, []string{"dir1", "dir2"}))
 
@@ -71,7 +82,7 @@ func TestSearchRepoBothDirs(t *testing.T) {
 	}
 
 	// Confirm we got the files we expected
-	want := []string{"/dir1/file1", "/dir2/file1"}
+	want := []string{"dir1/file1", "dir2/file1"}
 	got := make([]string, 0)
 	for k, _ := range resp.Files {
 		for _, wantk := range want {
@@ -86,9 +97,12 @@ func TestSearchRepoBothDirs(t *testing.T) {
 }
 
 func TestSearchRepoEachDir(t *testing.T) {
+	cfg := cfgSearchTest()
+	defer endSearchTest(&cfg)
+
 	key := "TestSearchRepoEachDir"
 	repos := newDb()
-	svc := NewService(repos)
+	svc := NewService(repos, cfgRpcTest())
 	defer os.RemoveAll(createRepo(t, svc, repo1, key, []string{"dir1", "dir2"}))
 
 	// Now search for things in just one dir
@@ -110,9 +124,12 @@ func TestSearchRepoEachDir(t *testing.T) {
 }
 
 func TestSearchWithPathRe(t *testing.T) {
+	cfg := cfgSearchTest()
+	defer endSearchTest(&cfg)
+
 	key := "TestSearchWithPathRe"
 	repos := newDb()
-	svc := NewService(repos)
+	svc := NewService(repos, cfgRpcTest())
 	defer os.RemoveAll(createRepo(t, svc, repo1, key, []string{"dir1", "dir2"}))
 
 	// Search for something that exists, but not in this dir

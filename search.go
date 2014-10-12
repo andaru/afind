@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -14,20 +13,21 @@ import (
 )
 
 type searcher struct {
+	config Config
 	repos  KeyValueStorer
 	client *RpcClient
 }
 
-func newSearcher(repos KeyValueStorer) *searcher {
-	return &searcher{repos: repos}
+func newSearcher(repos KeyValueStorer, c Config) *searcher {
+	return &searcher{config: c, repos: repos}
 }
 
-func newSearcherRemote(repos KeyValueStorer, address string) (*searcher, error) {
+func newSearcherRemote(repos KeyValueStorer, c Config, address string) (*searcher, error) {
 	var s *searcher
 
 	client, err := NewRpcClient(address)
 	if err == nil {
-		s = &searcher{repos: repos, client: client}
+		s = &searcher{config: c, repos: repos, client: client}
 	}
 	return s, err
 }
@@ -93,8 +93,8 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	log.Debug("search consulting %d repos", len(repos))
 
 	for _, repo := range repos {
-		if isSearchLocal(repo) {
-			shards, _ := findShards(repo.IndexPath)
+		if s.isSearchLocal(repo) {
+			shards := getShards(repo)
 			for _, shard := range shards {
 				total++
 				go func(sh string, r *Repo) {
@@ -112,11 +112,13 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 		}
 	}
 
-	log.Debug("search waiting for %d shards", total)
-	timeout := time.After(30 * time.Second)
+	timeout := s.config.TimeoutSearch()
+	log.Debug("search waiting for %d shards (timeout %v)", total, timeout)
+
 	for total > 0 {
 		select {
 		case <-timeout:
+			log.Debug("search timed out")
 			break
 		case newSr := <-ch:
 			mergeResponse(newSr, sr)
@@ -137,8 +139,8 @@ func repoHost(repo *Repo) string {
 	return ""
 }
 
-func isSearchLocal(repo *Repo) bool {
-	localhost, _ := config.DefaultRepoMeta["hostname"]
+func (s searcher) isSearchLocal(repo *Repo) bool {
+	localhost, _ := s.config.DefaultRepoMeta["hostname"]
 	if len(localhost) == 0 {
 		return true
 	}
@@ -191,14 +193,17 @@ type grep struct {
 }
 
 // Returns a new local RE2 grepper for this repository
-func newGrep(repo *Repo, filename string) *grep {
-	return &grep{repo: repo, filename: filename}
+// using the index filename.
+func newGrep(repo *Repo, ixfilename string) *grep {
+	return &grep{repo: repo, filename: ixfilename}
 }
 
-// Returns a slice of paths found for a given Repo.IndexPath prefix
-func findShards(indexPath string) ([]string, error) {
-	results, err := filepath.Glob(indexPath + "*.afindex")
-	return results, err
+func getShards(repo *Repo) []string {
+	res := make([]string, repo.numShards)
+	for i := 0; i < repo.numShards; i++ {
+		res[i] = repo.IndexPath + "-" + strconv.Itoa(i) + ".afindex"
+	}
+	return res
 }
 
 func (s *grep) searchRepo(request *SearchRequest) (
@@ -225,12 +230,14 @@ func (s *grep) searchRepo(request *SearchRequest) (
 
 	resp = newSearchResponse()
 
+	var ix *index.Index
 	// Open the index file
-	ix, err := index.Open(s.filename)
+	ix, err = index.Open(s.filename)
 	if os.IsNotExist(err) || os.IsPermission(err) {
 		return
 	}
 
+	pstart := time.Now()
 	// Generate the trigram query from the search regexp
 	s.Regexp = re
 	q := index.RegexpQuery(re.Syntax)
@@ -238,7 +245,8 @@ func (s *grep) searchRepo(request *SearchRequest) (
 	// Perform the trigram index search
 	var post []uint32
 	post = ix.PostingQuery(q)
-
+	pelapsed := time.Since(pstart)
+	log.Debug("posting query complete in %v", pelapsed)
 	// Optionally filter the path names in the posting query results
 	if fileRe != nil {
 		files := make([]uint32, 0, len(post))
@@ -334,8 +342,9 @@ func (s *grep) reader(r io.Reader, name string) (
 				lineEnd = end
 			}
 			lineno += countNL(buf[chunkStart:lineStart])
-			matches[strconv.Itoa(lineno)] = string(
-				buf[lineStart:lineEnd])
+			if lineStart != lineEnd {
+				matches[strconv.Itoa(lineno)] = string(buf[lineStart:lineEnd])
+			}
 			lineno++
 			chunkStart = lineEnd
 		}
@@ -355,5 +364,8 @@ func (s *grep) reader(r io.Reader, name string) (
 	if err != nil {
 		return 0, nil, err
 	}
-	return lineno - 1, matches, err
+	if lineno > 0 {
+		lineno--
+	}
+	return lineno, matches, err
 }

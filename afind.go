@@ -1,5 +1,9 @@
 package afind
 
+import (
+	"os"
+)
+
 // This file composes the different system parts (defined as
 // interfaces in data.go) into the overall Afind system.
 
@@ -7,13 +11,14 @@ package afind
 // by server interfaces such as the HTTP(S) WebService
 // or the Gob RPC over TCP RpcService
 type Service struct {
+	config   Config
 	repos    KeyValueStorer
 	Indexer  Indexer
 	Searcher Searcher
 }
 
-func NewService(repos KeyValueStorer) *Service {
-	return &Service{repos, *newIndexer(repos), *newSearcher(repos)}
+func NewService(repos KeyValueStorer, c Config) *Service {
+	return &Service{c, repos, *newIndexer(repos, c), *newSearcher(repos, c)}
 }
 
 // The Afind system
@@ -29,13 +34,7 @@ type System struct {
 //
 // Test code can call this function with test implementations of the
 // interfaces used in the system struct.
-func composeSystem(repos KeyValueStorer, i Indexer, s Searcher) *System {
-	service := Service{
-		repos:    repos,
-		Indexer:  i,
-		Searcher: s,
-	}
-
+func composeSystem(service Service) *System {
 	return &System{
 		service:    service,
 		quit:       make(chan error),
@@ -45,11 +44,21 @@ func composeSystem(repos KeyValueStorer, i Indexer, s Searcher) *System {
 }
 
 // The system creation entry point for the afind system.
-func New() *System {
-	repos := newDb()
-	indexer := newIndexer(repos)
-	searcher := newSearcher(repos)
-	return composeSystem(repos, indexer, searcher)
+func New(c Config) *System {
+	var repos KeyValueStorer
+
+	if c.DbFile == "" {
+		repos = newDb()
+	} else {
+		repos = newDbWithJsonBacking(c.DbFile)
+	}
+
+	service := NewService(repos, c)
+	if err := makeIndexRoot(c); err != nil {
+		log.Fatalf("Could not make IndexRoot: %v", err)
+	}
+
+	return composeSystem(*service)
 }
 
 func (s *System) Start() {
@@ -75,4 +84,8 @@ func (s *System) ExitWithError(err error) {
 
 func (s *System) WaitForExit() error {
 	return <-s.quit
+}
+
+func makeIndexRoot(config Config) error {
+	return os.MkdirAll(config.IndexRoot, 0750)
 }

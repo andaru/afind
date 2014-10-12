@@ -10,26 +10,22 @@ import (
 	"strconv"
 )
 
-const (
-	TimeoutIndex = 5 * time.Minute
-)
-
 type indexer struct {
-	repos   KeyValueStorer
-	nshards int
-	client  *RpcClient
+	repos  KeyValueStorer
+	config Config
+	client *RpcClient
 }
 
-func newIndexer(repos KeyValueStorer) *indexer {
-	return &indexer{repos: repos, nshards: config.NumShards}
+func newIndexer(repos KeyValueStorer, c Config) *indexer {
+	return &indexer{repos: repos, config: c}
 }
 
-func newIndexerRemote(repos KeyValueStorer, address string) (*indexer, error) {
+func newIndexerRemote(repos KeyValueStorer, c Config, address string) (*indexer, error) {
 	var i *indexer
 
 	client, err := NewRpcClient(address)
 	if err == nil {
-		i = &indexer{repos: repos, nshards: config.NumShards, client: client}
+		i = &indexer{repos: repos, config: c, client: client}
 	}
 	return i, err
 }
@@ -50,11 +46,11 @@ func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
 	return err
 }
 
-func indexPathPrefix(request *IndexRequest) string {
-	if config.IndexInRepo {
+func (i indexer) indexPathPrefix(request *IndexRequest) string {
+	if i.config.IndexInRepo {
 		return path.Join(request.Root, request.Key)
 	}
-	return path.Join(config.IndexRoot, request.Key)
+	return path.Join(i.config.IndexRoot, request.Key)
 }
 
 func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err error) {
@@ -68,42 +64,39 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	}
 
 	resp = newIndexResponse()
-	repo := *newRepoFromIndexRequest(&request)
+	repo := newRepoFromIndexRequest(&request)
 	resp.Repo = &repo
+	repo.IndexPath = i.indexPathPrefix(&request)
 
-	numShards := config.NumShards
+	numShards := i.config.NumShards
 	if numShards < 1 {
 		numShards = 1
 	}
 
 	shards := make([]*index.IndexWriter, numShards)
 	for n := range shards {
-		pfx := indexPathPrefix(&request)
-		shards[n] = index.Create(pfx + "-" + strconv.Itoa(n) + ".afindex")
+		shards[n] = index.Create(
+			repo.IndexPath + "-" + strconv.Itoa(n) + ".afindex")
 	}
 
 	// Build the master path list from request.Dirs, ignoring absolute paths
 	paths := make([]string, 0)
 	for _, p := range request.Dirs {
-		if p == "" {
-			continue
-		}
-		if !path.IsAbs(p) {
+		if p != "" && !path.IsAbs(p) {
 			paths = append(paths, path.Join(request.Root, p))
 		} else {
-			log.Debug("skip non absolute path '%s'")
+			log.Debug("skipping empty or non absolute path '%s'")
 		}
 	}
 
 	if len(paths) == 0 {
-		// Nothing to do
-		return nil, newNoDirsError()
+		return nil, newValueError(
+			"Dirs", "No valid paths found")
 	}
 
-	// Walk the paths, adding files in those paths to each shard in a
-	// round-robin way.
+	// Walk the paths, adding one to each shard round robin
 	var lasterr error
-	reg := config.NoIndex()
+	noireg := i.config.NoIndex()
 
 	numDirs := 0
 	numFiles := 0
@@ -112,15 +105,13 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	for _, path := range paths {
 		lasterr = filepath.Walk(path,
 			func(p string, info os.FileInfo, werr error) error {
-				// log.Debug("walk path %v info=%+v", path, info)
 				if info == nil {
 					return nil
 				}
-
 				// If a path regular expression was provided,
 				// only include files or whole directories
 				// that regular expression.
-				if reg != nil && reg.FindString(p) != "" {
+				if noireg != nil && noireg.FindString(p) != "" {
 					if info.IsDir() {
 						return filepath.SkipDir
 					}
@@ -140,15 +131,12 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 					return nil
 				}
 
-				// trim the Repo Root path and trailing slash
-				finalpath := p[advance:]
-
 				if info.IsDir() {
 					numDirs++
 				} else if info.Mode()&os.ModeType == 0 {
 					numFiles++
-					// TODO: handle archives
-
+					// trim the Repo Root path and trailing slash
+					finalpath := p[advance+1:]
 					// add the file to this shard
 					slotnum := numFiles % numShards
 					shards[slotnum].AddFileInRoot(
@@ -162,23 +150,26 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	// Flush the indices
 	for _, ix := range shards {
 		ix.Flush()
-		repo.SizeData += ByteSize(ix.DataBytes())
-		repo.SizeIndex += ByteSize(ix.IndexBytes())
+		repo.sizeData += ByteSize(ix.DataBytes())
+		repo.sizeIndex += ByteSize(ix.IndexBytes())
 	}
+	repo.IndexPath = i.indexPathPrefix(&request)
+	repo.NumFiles = numFiles
+	repo.NumDirs = numDirs
+	repo.numShards = numShards
+	for k, v := range request.Meta {
+		repo.Meta[k] = v
+	}
+	repo.SizeData = float64(repo.sizeData)
+	repo.SizeIndex = float64(repo.sizeIndex)
+	resp.Repo = &repo
+	resp.Elapsed = time.Since(start)
 	if err != nil {
 		repo.State = ERROR
 	} else {
 		repo.State = OK
 	}
-	repo.IndexPath = indexPathPrefix(&request)
-	repo.NumFiles = numFiles
-	repo.NumDirs = numDirs
-	for k, v := range request.Meta {
-		repo.Meta[k] = v
-	}
-	resp.Repo = &repo
-	resp.Elapsed = time.Since(start)
-	err = i.repos.Set(repo.Key, &repo)
+
 	log.Debug("index %s [meta %v] (%s data, %s index)",
 		request.Key, repo.Meta, repo.SizeData, repo.SizeIndex)
 	log.Info("index %s (%d/%d files/dirs) created in %v",
@@ -198,11 +189,16 @@ func (i indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err err
 func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	log.Debug("Main Index entry %v", request)
 	// Set initial metadata (e.g. host) from server defaults
-	for k, v := range config.DefaultRepoMeta {
+
+	if request.Meta == nil {
+		request.Meta = make(map[string]string)
+	}
+
+	for k, v := range i.config.DefaultRepoMeta {
 		request.Meta[k] = v
 	}
 
-	if isIndexLocal(&request) {
+	if i.isIndexLocal(&request) {
 		resp, err = i.indexLocal(request)
 	} else {
 		resp, err = i.indexRemote(request)
@@ -210,6 +206,10 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	if err == nil {
 		log.Info("index %v (%s/%s index/data) created in %v",
 			request.Key, resp.Repo.SizeIndex, resp.Repo.SizeData, resp.Elapsed)
+	}
+	if resp != nil {
+		log.Debug("inserting repo [%v] %+v", resp.Repo.Key, resp.Repo)
+		err = i.repos.Set(resp.Repo.Key, resp.Repo)
 	}
 	return
 }
@@ -222,8 +222,8 @@ func indexRequestHost(request *IndexRequest) string {
 	return ""
 }
 
-func isIndexLocal(request *IndexRequest) bool {
-	localhost, _ := config.DefaultRepoMeta["hostname"]
+func (i indexer) isIndexLocal(request *IndexRequest) bool {
+	localhost, _ := i.config.DefaultRepoMeta["hostname"]
 	if len(localhost) == 0 {
 		return true
 	}

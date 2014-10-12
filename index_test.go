@@ -7,7 +7,27 @@ import (
 	"testing"
 )
 
+func cfgIndexTest() Config {
+	config := Config{}
+	config.IndexInRepo = false
+	config.IndexRoot = `/tmp/afind.index.test`
+	config.NumShards = 2
+	if err := makeIndexRoot(config); err != nil {
+		log.Fatalf("Could not make IndexRoot: %v", err)
+	}
+	return config
+}
+
+func endIndexTest(config *Config) {
+	if err := os.RemoveAll(config.IndexRoot); err != nil {
+		log.Critical(err.Error())
+	}
+}
+
 func TestNewIndexRequestWithMeta(t *testing.T) {
+	cfg := cfgIndexTest()
+	defer endIndexTest(&cfg)
+
 	ir := newIndexRequest("key", "root", []string{"foo", "foo/bar"})
 	if ir.Key != "key" {
 		t.Errorf("got %v want key", ir.Key)
@@ -40,6 +60,9 @@ func getTempDir(testname string) (dir string, err error) {
 }
 
 func TestIndex(t *testing.T) {
+	cfg := cfgIndexTest()
+	defer endIndexTest(&cfg)
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -50,12 +73,11 @@ func TestIndex(t *testing.T) {
 	}}
 	var resp *IndexResponse
 
-	config.NumShards = 8
-
 	req.Key = "1234"
 	req.Root = path.Join(cwd, "./testdata/repo1/")
 	req.Dirs = []string{"."}
-	ixr := newIndexer(newDb())
+
+	ixr := newIndexer(newDb(), cfg)
 	resp, err = ixr.Index(req)
 
 	if err != nil {

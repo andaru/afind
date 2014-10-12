@@ -72,7 +72,7 @@ type rpcService struct {
 }
 
 func (rs *rpcService) start() error {
-	if config.RpcBind == "" {
+	if rs.config.RpcBind == "" {
 		return nil
 	}
 
@@ -80,10 +80,10 @@ func (rs *rpcService) start() error {
 	if err = rs.svr.RegisterName("Afind", rs); err != nil {
 		return err
 	}
-	l, err := net.Listen("tcp", config.RpcBind)
+	l, err := net.Listen("tcp", rs.config.RpcBind)
 	if err == nil {
 		go rs.svr.Accept(l)
-		log.Info("Started RPC server at %s", config.RpcBind)
+		log.Info("Started RPC server at %s", rs.config.RpcBind)
 	}
 	return err
 }
