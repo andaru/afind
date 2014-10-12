@@ -16,7 +16,7 @@ type Config struct {
 	NumShards   int // the number of Repo shards to build per index request
 
 	// default repository metadata
-	// manipulated by e.g., DefaultHostname()
+	// manipulated by e.g., DefaultHost()
 	DefaultRepoMeta map[string]string
 
 	noindexStr string // regular expression of files not to index
@@ -32,14 +32,16 @@ func init() {
 	config = &Config{DefaultRepoMeta: make(map[string]string)}
 }
 
-func (c *Config) DefaultHostname() error {
-	if _, ok := c.DefaultRepoMeta["hostname"]; ok {
-		// 'hostname' already set, don't default
+func (c *Config) DefaultHost() error {
+	if _, ok := c.DefaultRepoMeta["host"]; ok {
+		// 'host' already set, don't default
 		return nil
 	}
 	hn, err := os.Hostname()
 	if err == nil {
-		c.DefaultRepoMeta["hostname"] = hn
+		c.DefaultRepoMeta["host"] = hn
+	} else {
+		c.DefaultRepoMeta["host"] = "localhost"
 	}
 	return err
 }

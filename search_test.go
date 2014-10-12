@@ -14,9 +14,13 @@ var (
 	}
 )
 
-func init() {
+func setupSearchTest() {
 	config.IndexInRepo = true
 	config.SetNoIndex(`.afindex$`)
+}
+
+func init() {
+	setupSearchTest()
 }
 
 func createRepo(t *testing.T,

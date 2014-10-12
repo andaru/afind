@@ -26,7 +26,7 @@ func (ws *webService) start() error {
 			err = http.ListenAndServe(addr, ws.router)
 		}()
 		if err == nil {
-			log.Info("Started HTTP server on %s", addr)
+			log.Info("Started HTTP server at %s", addr)
 		}
 	}
 	return err

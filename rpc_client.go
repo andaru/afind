@@ -28,14 +28,14 @@ func (client *RpcClient) Search(request SearchRequest) (*SearchResponse, error) 
 	return sr, err
 }
 
-func (client *RpcClient) GetRepo(key string) (*Repo, error) {
-	var repo *Repo
-	err := client.Call("Afind.GetRepo", key, &repo)
-	return repo, err
+func (client *RpcClient) GetRepo(key string) (*map[string]*Repo, error) {
+	repos := make(map[string]*Repo)
+	err := client.Call("Afind.GetRepo", key, &repos)
+	return &repos, err
 }
 
-func (client *RpcClient) GetAllRepos() (map[string]*Repo, error) {
+func (client *RpcClient) GetAllRepos() (*map[string]*Repo, error) {
 	repos := make(map[string]*Repo)
-	err := client.Call("Afind.GetAllRepos", true, &repos)
-	return repos, err
+	err := client.Call("Afind.GetAllRepos", struct{}{}, &repos)
+	return &repos, err
 }

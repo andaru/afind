@@ -21,6 +21,10 @@ const (
 	indexPathSuffix = ".afindex"
 )
 
+func (b ByteSize) AsInt64() int64 {
+	return int64(b)
+}
+
 func (b ByteSize) String() string {
 	switch {
 	case b >= TB:
@@ -35,20 +39,30 @@ func (b ByteSize) String() string {
 	return fmt.Sprintf("%.2fB", b)
 }
 
+func (b ByteSize) MarshalText() ([]byte, error) {
+	return []byte(b.String()), nil
+}
+
+// For JSON, we produce the number of bytes
+func (b ByteSize) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf("%.f", b)), nil
+}
+
 // A Repo represents a single indexed repository of source code.
 type Repo struct {
-	Key       string            // Unique key
-	IndexPath string            // Path to the .afindex file covering this Repo
-	Root      string            // Root path (under which Dirs are rooted)
-	Meta      map[string]string // User configurable metadata for this Repo
-	Dirs      []string          // Directories contained within this Repo
-	State     RepoState         // Current repository indexing state
+	Key       string            `json:"key"`          // Unique key
+	IndexPath string            `json:"index_path"`   // Path to the .afindex file covering this Repo
+	Root      string            `json:"root"`         // Root path (under which Dirs are rooted)
+	Meta      map[string]string `json:"meta"`         // User configurable metadata for this Repo
+	ReqDirs   []string          `json:"request_dirs"` // Original request sub directories
+	Dirs      []string          `json:"dirs"`         // Sub directories contained within the archive
+	State     RepoState         `json:"state"`        // Current repository indexing state
 
 	// Metadata produced during indexing
-	NumDirs   int      // Number of directories indexed
-	NumFiles  int      // Number of files indexed
-	SizeIndex ByteSize // Size of index
-	SizeData  ByteSize // Size of the source data
+	NumDirs   int      `json:"num_dirs"`          // Number of directories indexed
+	NumFiles  int      `json:"num_files"`         // Number of files indexed
+	SizeIndex ByteSize `json:"size_index,string"` // Size of index
+	SizeData  ByteSize `json:"size_data,string"`  // Size of the source data
 }
 
 type RepoState int
@@ -78,6 +92,7 @@ func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 		Key:       key,
 		IndexPath: uriIndex,
 		Meta:      make(map[string]string),
+		ReqDirs:   make([]string, 0),
 		Dirs:      make([]string, 0),
 	}
 	for k, v := range meta {

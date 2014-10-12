@@ -50,8 +50,16 @@ func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
 	return err
 }
 
+func indexPathPrefix(request *IndexRequest) string {
+	if config.IndexInRepo {
+		return path.Join(request.Root, request.Key)
+	}
+	return path.Join(config.IndexRoot, request.Key)
+}
+
 func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err error) {
 	log.Info("local index %v (%d sub dirs)", request.Key, len(request.Dirs))
+	log.Debug("request %+v", request)
 	start := time.Now()
 
 	if err := validateIndexRequest(&request, i.repos); err != nil {
@@ -60,7 +68,8 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	}
 
 	resp = newIndexResponse()
-	repo := newRepoFromIndexRequest(&request)
+	repo := *newRepoFromIndexRequest(&request)
+	resp.Repo = &repo
 
 	numShards := config.NumShards
 	if numShards < 1 {
@@ -69,13 +78,14 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 
 	shards := make([]*index.IndexWriter, numShards)
 	for n := range shards {
-		shards[n] = index.Create(path.Join(
-			request.Root, request.Key+"-"+strconv.Itoa(n)+".afindex"))
+		pfx := indexPathPrefix(&request)
+		shards[n] = index.Create(pfx + "-" + strconv.Itoa(n) + ".afindex")
 	}
 
 	// Build the master path list from request.Dirs, ignoring absolute paths
 	paths := make([]string, 0)
 	for _, p := range request.Dirs {
+		resp.Repo.ReqDirs = append(resp.Repo.ReqDirs, p)
 		if p == "" {
 			continue
 		}
@@ -86,11 +96,18 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 		}
 	}
 
+	if len(paths) == 0 {
+		// Nothing to do
+		return nil, newNoDirsError()
+	}
+
 	// Walk the paths, adding files in those paths to each shard in a
 	// round-robin way.
 	var lasterr error
 	reg := config.NoIndex()
 
+	dirmap := make(map[string]*struct{})
+	dirval := &struct{}{}
 	numDirs := 0
 	numFiles := 0
 	advance := len(request.Root)
@@ -130,21 +147,28 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 				finalpath := p[advance:]
 
 				if info.IsDir() {
-					// todo: track only dirs that have files
 					numDirs++
 				} else if info.Mode()&os.ModeType == 0 {
+					numFiles++
 					// TODO: handle archives
+
+					// track the directory
+					// containing this file
+					dirmap[filepath.Dir(finalpath)] = dirval
 
 					// add the file to this shard
 					slotnum := numFiles % numShards
 					shards[slotnum].AddFileInRoot(
 						request.Root, finalpath)
-					numFiles++
 				}
 				return nil
 			})
 	}
 	err = lasterr
+
+	for dir, _ := range dirmap {
+		resp.Repo.Dirs = append(resp.Repo.Dirs, dir)
+	}
 
 	// Flush the indices
 	for _, ix := range shards {
@@ -157,16 +181,19 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	} else {
 		repo.State = OK
 	}
-	repo.IndexPath = path.Join(request.Root, request.Key)
+	repo.IndexPath = indexPathPrefix(&request)
 	repo.NumFiles = numFiles
 	repo.NumDirs = numDirs
-	// resp.Repos[repo.Key] = repo
+	log.Debug("updating metadata")
 	for k, v := range request.Meta {
+		log.Debug("k: %v v:%+v", k, v)
 		repo.Meta[k] = v
 	}
-	resp.Repo = repo
+	resp.Repo = &repo
 	resp.Elapsed = time.Since(start)
-	err = i.repos.Set(repo.Key, repo)
+	err = i.repos.Set(repo.Key, &repo)
+	log.Debug("index %s (%s data, %s index)",
+		request.Key, repo.SizeData, repo.SizeIndex)
 	log.Info("index %s (%d/%d files/dirs) created in %v",
 		request.Key, numFiles, numDirs, resp.Elapsed)
 	return
@@ -182,7 +209,8 @@ func (i indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err err
 }
 
 func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
-	// Set meta from defaults then override from request
+	log.Debug("Main Index entry %v", request)
+	// Set initial metadata (e.g. host) from server defaults
 	for k, v := range config.DefaultRepoMeta {
 		request.Meta[k] = v
 	}

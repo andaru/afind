@@ -48,6 +48,24 @@ func IsValueError(e error) bool {
 	return false
 }
 
+// No specific repos found when requesting some subset of repos
+type NoRepoFoundError struct{}
+
+func newNoRepoFoundError() *NoRepoFoundError {
+	return &NoRepoFoundError{}
+}
+
+func (e NoRepoFoundError) Error() string {
+	return "No such repository"
+}
+
+func IsNoRepoFoundError(e error) bool {
+	if _, ok := e.(*NoRepoFoundError); ok {
+		return true
+	}
+	return false
+}
+
 // No repositories were available to search in
 type NoRepoAvailableError struct{}
 
@@ -56,11 +74,29 @@ func newNoRepoAvailableError() *NoRepoAvailableError {
 }
 
 func (e NoRepoAvailableError) Error() string {
-	return "No Repo available to search"
+	return "No repositories available"
 }
 
 func IsNoRepoAvailableError(e error) bool {
 	if _, ok := e.(*NoRepoAvailableError); ok {
+		return true
+	}
+	return false
+}
+
+// No valid directories were passed
+type NoDirsError struct{}
+
+func newNoDirsError() *NoDirsError {
+	return &NoDirsError{}
+}
+
+func (e NoDirsError) Error() string {
+	return "No repositories available"
+}
+
+func IsNoDirsError(e error) bool {
+	if _, ok := e.(*NoDirsError); ok {
 		return true
 	}
 	return false

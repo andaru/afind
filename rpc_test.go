@@ -10,6 +10,12 @@ import (
 	"testing"
 )
 
+func setupRpcTest() {
+	config.IndexInRepo = false
+	config.IndexRoot = `/tmp/afind`
+	config.SetNoIndex(`willnotmatchanything`)
+}
+
 // Test outside of the RPC framework
 func TestRpcIndexFunction(t *testing.T) {
 	key := "key"
@@ -103,13 +109,14 @@ func TestGetRepo(t *testing.T) {
 	}
 
 	seen := make(map[string]bool)
-	var repos Repos
+	var repos map[string]*Repo
 	keys := []string{"key1", "key2"}
 	err = rpcsvc.GetRepos(keys, &repos)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
-	for k, v := range repos.Repos {
+	for k, v := range repos {
+		t.Logf("repos k:%+v v:%+v", k, v)
 		if !strings.Contains(v.IndexPath, "/repo1/key") {
 			t.Error("want '/repo1/key' in v.IndexPath which is",
 				v.IndexPath)
@@ -217,7 +224,7 @@ func TestGetAllRepos(t *testing.T) {
 	}
 
 	var repos map[string]*Repo
-	err = rpcsvc.GetAllRepos(true, &repos)
+	err = rpcsvc.GetAllRepos(struct{}{}, &repos)
 	if len(repos) != 3 {
 		t.Error("got", len(repos), "repos, want 3")
 	}

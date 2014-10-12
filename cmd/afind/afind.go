@@ -90,38 +90,43 @@ func index(context *ctx, key, root string, subdirs []string) error {
 	return nil
 }
 
-func printrepo(repo *afind.Repo) {
-	fmt.Printf("Repo: %v\n", repo.Key)
-	fmt.Printf("  root: %v\n", repo.Root)
-	fmt.Printf("  file (directory) count: %d (%d)\n", repo.NumFiles, repo.NumDirs)
-	fmt.Printf("  meta:\n")
-	for mk, mv := range repo.Meta {
-		fmt.Printf("    %s=%s\n", mk, mv)
+func repoAsString(r *afind.Repo) string {
+	// convert the metadata to a json object style
+	meta := "    {"
+	for k, v := range r.Meta {
+		meta += k + `:` + ` ` + v + `, `
 	}
+	meta = meta[:len(meta)-2] + "}"
+
+	return (fmt.Sprintf("repo key: %s (state: %s)\n", r.Key, r.State) +
+		fmt.Sprintf("  root path   : %v\n", r.Root) +
+		fmt.Sprintf("  data size   : %s\n", r.SizeData) +
+		fmt.Sprintf("  index size  : %s\n", r.SizeIndex) +
+		fmt.Sprintf("  files (dirs): %d (%d)\n", r.NumFiles, r.NumDirs) +
+		"  metadata: " + meta + "\n")
 }
 
 func repos(context *ctx, key string) error {
 	var err error
-	repos := make(map[string]*afind.Repo)
-	repo, err := context.rpcClient.GetRepo(key)
-	if repo == nil {
-		// retrieve all repos, perhaps to filter
+
+	if key == "" {
+		// get all repos
 		rs, allerr := context.rpcClient.GetAllRepos()
 		if allerr != nil {
 			return allerr
 		}
-		for k, v := range rs {
-			repos[k] = v
+		for _, v := range *rs {
+			fmt.Println(repoAsString(v))
 		}
 	} else {
-
-		repos[repo.Key] = repo
-		fmt.Printf("%#v\n", repos)
-	}
-
-	for k, repo := range repos {
-		if strings.HasPrefix(k, key) {
-			printrepo(repo)
+		// or just one by argument
+		repos, err := context.rpcClient.GetRepo(key)
+		if err == nil {
+			for _, repo := range *repos {
+				fmt.Println(repoAsString(repo))
+			}
+		} else {
+			log.Error(err.Error())
 		}
 	}
 

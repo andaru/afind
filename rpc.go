@@ -19,27 +19,29 @@ func (rs *rpcService) Search(req SearchRequest, resp *SearchResponse) error {
 
 func (rs *rpcService) Index(req IndexRequest, response *IndexResponse) error {
 	start := time.Now()
-	req = newIndexRequestWithMeta(req.Key, req.Root, req.Dirs, req.Meta)
-	repos, err := rs.Indexer.Index(req)
+
+	request := newIndexRequestWithMeta(req.Key, req.Root, req.Dirs, req.Meta)
+	ir, err := rs.Indexer.Index(request)
 	if err != nil {
 		return err
 	}
-	response.Repo = repos.Repo
+	response.Repo = ir.Repo
 	response.Elapsed = time.Since(start)
-	return err
+	return nil
 }
 
-func (rs *rpcService) GetRepo(key string, response *Repo) error {
+func (rs *rpcService) GetRepo(key string, response *map[string]*Repo) error {
+	repos := make(map[string]*Repo, 1)
 	repo := rs.Service.repos.Get(key)
 	if repo != nil {
-		r := repo.(*Repo)
-		response = &(*r)
+		repos[key] = repo.(*Repo)
+		*response = repos
 		return nil
 	}
-	return newNoRepoAvailableError()
+	return newNoRepoFoundError()
 }
 
-func (rs *rpcService) GetRepos(keys []string, response *Repos) error {
+func (rs *rpcService) GetRepos(keys []string, response *map[string]*Repo) error {
 	repos := make(map[string]*Repo)
 	for _, key := range keys {
 		repo := rs.Service.repos.Get(key)
@@ -47,19 +49,18 @@ func (rs *rpcService) GetRepos(keys []string, response *Repos) error {
 			repos[key] = repo.(*Repo)
 		}
 	}
-	response.Repos = repos
+	*response = repos
 	return nil
 }
 
-func (rs *rpcService) GetAllRepos(_ bool, response *map[string]*Repo) error {
+func (rs *rpcService) GetAllRepos(_ struct{}, response *map[string]*Repo) error {
 	repos := make(map[string]*Repo)
 	rs.repos.ForEach(func(key string, value interface{}) bool {
 		if v, ok := value.(*Repo); ok {
 			repos[key] = v
-		} else {
-			return false
+			return true
 		}
-		return true
+		return false
 	})
 	*response = repos
 	return nil
@@ -77,7 +78,7 @@ func (rs *rpcService) start() error {
 
 	var err error
 	if err = rs.svr.RegisterName("Afind", rs); err != nil {
-		log.Fatal("RPC server error:", err)
+		return err
 	}
 	l, err := net.Listen("tcp", config.RpcBind)
 	if err == nil {
