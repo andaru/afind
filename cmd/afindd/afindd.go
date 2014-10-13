@@ -59,11 +59,14 @@ var af *afind.System
 
 func main() {
 	var err error
+
 	flag.Parse()
+
 	setupLogging()
 	config := setupConfig()
 	af := afind.New(*config)
 	af.Start()
+
 	err = af.WaitForExit()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

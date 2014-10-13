@@ -199,8 +199,8 @@ func newGrep(repo *Repo, ixfilename string) *grep {
 }
 
 func getShards(repo *Repo) []string {
-	res := make([]string, repo.numShards)
-	for i := 0; i < repo.numShards; i++ {
+	res := make([]string, repo.NumShards)
+	for i := 0; i < repo.NumShards; i++ {
 		res[i] = repo.IndexPath + "-" + strconv.Itoa(i) + ".afindex"
 	}
 	return res

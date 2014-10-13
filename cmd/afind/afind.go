@@ -92,18 +92,19 @@ func index(context *ctx, key, root string, subdirs []string) error {
 
 func repoAsString(r *afind.Repo) string {
 	// convert the metadata to a json object style
-	meta := "    {"
+	meta := "{"
 	for k, v := range r.Meta {
-		meta += k + `:` + ` ` + v + `, `
+		meta += k + `:` + ` "` + v + `", `
 	}
 	meta = meta[:len(meta)-2] + "}"
 
 	return (fmt.Sprintf("repo key: %s (state: %s)\n", r.Key, r.State) +
-		fmt.Sprintf("  root path   : %v\n", r.Root) +
-		fmt.Sprintf("  data size   : %s\n", r.SizeData) +
-		fmt.Sprintf("  index size  : %s\n", r.SizeIndex) +
-		fmt.Sprintf("  files (dirs): %d (%d)\n", r.NumFiles, r.NumDirs) +
-		"  metadata: " + meta + "\n")
+		fmt.Sprintf("  root path  : %v\n", r.Root) +
+		fmt.Sprintf("  data size  : %s\n", afind.ByteSize(r.SizeData)) +
+		fmt.Sprintf("  index size : %s\n", afind.ByteSize(r.SizeIndex)) +
+		fmt.Sprintf("  total files: %d\n", r.NumFiles) +
+		fmt.Sprintf("  total dirs : %d\n", r.NumDirs) +
+		fmt.Sprintf("  metadata   : %v\n", meta))
 }
 
 func repos(context *ctx, key string) error {

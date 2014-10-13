@@ -30,11 +30,6 @@ type Config struct {
 	DbFile string // If non-empty, the JSON file containing the config backing store
 }
 
-// The global configuration object
-var (
-	zzconfig *Config
-)
-
 const (
 	defaultTimeoutIndex  = 1800 * time.Second
 	defaultTimeoutSearch = 30 * time.Second

@@ -24,38 +24,55 @@ type KeyValueStorer interface {
 type db struct {
 	*sync.RWMutex
 
-	R map[string]*Repo // repo key to repo map
+	R map[string]*Repo `json:"repos"` // repo key to repo map
 
 	bfn string             // backing filename
 	bs  io.ReadWriteCloser // backing store
 }
+
+const (
+	writeOptions = os.O_CREATE | os.O_TRUNC | os.O_RDWR
+	writeMode    = 0640
+)
 
 // caller must hold the mutex
 func (d *db) flush() error {
 	if d.bfn == "" {
 		return nil
 	}
-	enc := json.NewEncoder(d.bs)
+	file, err := os.OpenFile(d.bfn, writeOptions, writeMode)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(file)
 	return enc.Encode(d)
 }
 
-func (d *db) openbs() error {
-	if file, err := os.OpenFile(d.bfn, os.O_CREATE|os.O_RDWR, 0640); err != nil {
-		return err
-	} else {
-		d.bs = file
-		return nil
-	}
-}
-
-// caller must hold the mutex
+// caller must hold the mutex, and read is only called once at the
+// beginning so keep that hidden assumption in mind
 func (d *db) read() error {
 	if d.bfn == "" {
 		return nil // todo: really it's an error...
 	}
-	var err error
+	file, err := os.Open(d.bfn)
+	if err == nil {
+		d.bs = file
+	} else {
+		if !os.IsNotExist(err) {
+			log.Debug("read error: %v", err)
+			return nil
+		}
+		return err
+	}
 	dec := json.NewDecoder(d.bs)
 	err = dec.Decode(d)
+	// convert up the repos size values
+	if err == nil {
+		for k, r := range d.R {
+			d.R[k].sizeIndex = ByteSize(r.SizeIndex)
+			d.R[k].sizeData = ByteSize(r.SizeData)
+		}
+	}
 	return err
 }
 
@@ -97,7 +114,10 @@ func (d *db) Set(key string, value interface{}) error {
 	}
 	d.Lock()
 	defer d.Unlock()
-	defer d.flush()
+	flush := func() {
+		_ = d.flush()
+	}
+	defer flush()
 
 	d.R[key] = value.(*Repo)
 	return nil
@@ -106,7 +126,11 @@ func (d *db) Set(key string, value interface{}) error {
 func (d *db) Delete(key string) error {
 	d.Lock()
 	defer d.Unlock()
-	defer d.flush()
+	flush := func() {
+		_ = d.flush()
+	}
+	defer flush()
+
 	delete(d.R, key)
 	return nil
 }
@@ -129,17 +153,25 @@ func newDb() *db {
 	return &db{&sync.RWMutex{}, make(map[string]*Repo), "", nil}
 }
 
+func (d *db) getSizes() (index, data ByteSize) {
+	for _, v := range d.R {
+		index += v.sizeIndex
+		data += v.sizeData
+	}
+	return
+}
+
 func newDbWithJsonBacking(filename string) *db {
 	var err error
 
 	newDb := &db{&sync.RWMutex{}, make(map[string]*Repo), filename, nil}
-	if err = newDb.openbs(); err != nil {
-		log.Fatal(err.Error())
-	}
 	if err = newDb.read(); err == nil {
-		log.Info("Loaded database %s (%d repos)", filename, len(newDb.R))
+		sizeIndex, sizeData := newDb.getSizes()
+		log.Info("Loaded database %s (%d repos; %s data/%s index)",
+			filename, len(newDb.R), sizeData, sizeIndex)
 	} else {
-		log.Critical(err.Error())
+		log.Debug(err.Error())
+		log.Info("No database to load, starting with fresh config")
 	}
 	return newDb
 }

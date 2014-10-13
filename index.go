@@ -68,6 +68,7 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	resp.Repo = &repo
 	repo.IndexPath = i.indexPathPrefix(&request)
 
+	// Always create at least one shard
 	numShards := i.config.NumShards
 	if numShards < 1 {
 		numShards = 1
@@ -156,7 +157,7 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	repo.IndexPath = i.indexPathPrefix(&request)
 	repo.NumFiles = numFiles
 	repo.NumDirs = numDirs
-	repo.numShards = numShards
+	repo.NumShards = numShards
 	for k, v := range request.Meta {
 		repo.Meta[k] = v
 	}
@@ -170,10 +171,6 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 		repo.State = OK
 	}
 
-	log.Debug("index %s [meta %v] (%s data, %s index)",
-		request.Key, repo.Meta, repo.SizeData, repo.SizeIndex)
-	log.Info("index %s (%d/%d files/dirs) created in %v",
-		request.Key, numFiles, numDirs, resp.Elapsed)
 	return
 }
 
@@ -187,7 +184,7 @@ func (i indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err err
 }
 
 func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
-	log.Debug("Main Index entry %v", request)
+	log.Info("index %+v", request)
 	// Set initial metadata (e.g. host) from server defaults
 
 	if request.Meta == nil {
@@ -205,11 +202,15 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	}
 	if err == nil {
 		log.Info("index %v (%s/%s index/data) created in %v",
-			request.Key, resp.Repo.SizeIndex, resp.Repo.SizeData, resp.Elapsed)
+			resp.Repo.Key, resp.Repo.sizeIndex,
+			resp.Repo.sizeData, resp.Elapsed)
 	}
 	if resp != nil {
-		log.Debug("inserting repo [%v] %+v", resp.Repo.Key, resp.Repo)
 		err = i.repos.Set(resp.Repo.Key, resp.Repo)
+		if err != nil {
+			log.Critical("error setting repo key %s: %v",
+				resp.Repo.Key, err.Error())
+		}
 	}
 	return
 }

@@ -20,10 +20,6 @@ const (
 	indexPathSuffix = ".afindex"
 )
 
-func (b ByteSize) AsInt64() int64 {
-	return int64(b)
-}
-
 func (b ByteSize) String() string {
 	switch {
 	case b >= TB:
@@ -35,7 +31,7 @@ func (b ByteSize) String() string {
 	case b >= KB:
 		return fmt.Sprintf("%.2fKB", b/KB)
 	}
-	return fmt.Sprintf("%dB", b.AsInt64())
+	return fmt.Sprintf("%.fB", b)
 }
 
 func (b ByteSize) MarshalText() ([]byte, error) {
@@ -64,7 +60,7 @@ type Repo struct {
 	sizeData  ByteSize
 
 	// Number of shards written to disk, an optimisation to avoid a glob
-	numShards int
+	NumShards int `json:"num_shards,string"`
 }
 
 // used to avoid infinite recursion in UnmarshalJSON
@@ -150,7 +146,7 @@ type IndexRequest struct {
 
 // The response to calls to Indexer.Index.
 type IndexResponse struct {
-	Repo    *Repo
+	Repo    *Repo `json:"repo"`
 	Elapsed time.Duration
 }
 
