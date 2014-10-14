@@ -1,15 +1,15 @@
 <pre>
-           ___                    __     
-         /'___\  __              /\ \    
-   __   /\ \__/ /\_\     ___     \_\ \   
- /'__`\ \ \ ,__\\/\ \  /' _ `\   /'_` \  
-/\ \L\.\_\ \ \_/ \ \ \ /\ \/\ \ /\ \L\ \ 
-\ \__/.\_\\ \_\   \ \_\\ \_\ \_\\ \___,_\
- \/__/\/_/ \/_/    \/_/ \/_/\/_/ \/__,_ /
+        _,
+       | | o             |
+  __,  | | ,   _  _    __|
+./  |  |/  |  / |/ |  /  | .
+ \_/|_/|__/|_/  |  |_/\_/|_/
+       |\
+       |/
 </pre>
 
-`afind` : *distributed code search*
------------------------------------
+`afind` | distributed code search
+---------------------------------
 
 afind is a distributed code search engine based on Russ Cox's
 codesearch libraries.  A network daemon (running either as a backend
