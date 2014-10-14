@@ -13,23 +13,12 @@ import (
 )
 
 type searcher struct {
-	config Config
-	repos  KeyValueStorer
-	client *rpcClient
+	svc   Service
+	repos KeyValueStorer
 }
 
-func newSearcher(repos KeyValueStorer, c Config) *searcher {
-	return &searcher{config: c, repos: repos}
-}
-
-func newSearcherRemote(repos KeyValueStorer, c Config, address string) (*searcher, error) {
-	var s *searcher
-
-	client, err := NewRpcClient(address)
-	if err == nil {
-		s = &searcher{config: c, repos: repos, client: client}
-	}
-	return s, err
+func newSearcher(svc Service) searcher {
+	return searcher{svc: svc, repos: svc.repos}
 }
 
 func mergeResponse(in *SearchResponse, out *SearchResponse) {
@@ -57,7 +46,7 @@ func repoMetaMatchesSearch(repo *Repo, request *SearchRequest) bool {
 }
 
 func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
-	log.Info("Search [%v] path: [%v] keys: %v cs: %v",
+	log.Info("search [%v] path: [%v] keys: %v cs: %v",
 		request.Re, request.PathRe, request.RepoKeys, request.CaseSensitive)
 
 	var err error
@@ -112,11 +101,10 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 		}
 	}
 
-	timeout := s.config.TimeoutSearch()
+	timeout := s.svc.config.TimeoutSearch()
 	startShardWait := time.Now()
 	totalShards := total
-	log.Debug("search awaiting %d shards (timeout %ds)",
-		totalShards, s.config.timeoutSearch)
+	log.Debug("search awaiting %d shards", totalShards)
 
 	for total > 0 {
 		select {
@@ -147,7 +135,7 @@ func repoHost(repo *Repo) string {
 }
 
 func (s searcher) isSearchLocal(repo *Repo) bool {
-	localhost, _ := s.config.DefaultRepoMeta["hostname"]
+	localhost, _ := s.svc.config.DefaultRepoMeta["hostname"]
 	if len(localhost) == 0 {
 		return true
 	}
@@ -168,12 +156,12 @@ func (s *searcher) searchLocal(repo *Repo, fname string, request SearchRequest) 
 func (s *searcher) searchRemote(repo *Repo, request SearchRequest) (
 	resp *SearchResponse, err error) {
 
-	if s.client == nil {
-		err = newNoRepoAvailableError()
-		return newPopSearchResponse(repo, err), err
+	client, err := s.svc.remotes.Get(addressFromRepo(repo))
+	if err != nil {
+		resp = newPopSearchResponse(repo, err)
 	}
 	request.RepoKeys = []string{repo.Key}
-	resp, err = s.client.Search(request)
+	resp, err = client.Search(request)
 	if resp == nil {
 		resp = newPopSearchResponse(repo, err)
 	}
@@ -278,7 +266,8 @@ func (s *grep) searchRepo(request *SearchRequest) (
 		resp.Files[name][s.repo.Key] = matches
 		resp.NumLinesMatched = int64(numlines)
 	}
-
+	log.Debug("search shard matched %d lines in %d files",
+		resp.NumLinesMatched, len(resp.Files))
 	return
 }
 
@@ -288,7 +277,13 @@ func (s *grep) grepFile(filename string) (int, map[string]string, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	defer f.Close()
+	abc := func() {
+		if err := f.Close(); err != nil {
+			log.Critical(err.Error())
+		}
+	}
+	defer abc() // always. be. closing.
+
 	return s.reader(f, fname)
 }
 

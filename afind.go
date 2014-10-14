@@ -13,12 +13,20 @@ import (
 type Service struct {
 	config   Config
 	repos    KeyValueStorer
+	remotes  Remotes
 	Indexer  Indexer
 	Searcher Searcher
 }
 
 func NewService(repos KeyValueStorer, c Config) *Service {
-	return &Service{c, repos, *newIndexer(repos, c), *newSearcher(repos, c)}
+	svc := Service{
+		config:  c,
+		repos:   repos,
+		remotes: NewRemotes(),
+	}
+	svc.Indexer = newIndexer(svc)
+	svc.Searcher = newSearcher(svc)
+	return &svc
 }
 
 // The Afind system

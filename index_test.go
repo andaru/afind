@@ -63,6 +63,8 @@ func TestIndex(t *testing.T) {
 	cfg := cfgIndexTest()
 	defer endIndexTest(&cfg)
 
+	svc := NewService(newDb(), cfg)
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +79,7 @@ func TestIndex(t *testing.T) {
 	req.Root = path.Join(cwd, "./testdata/repo1/")
 	req.Dirs = []string{"."}
 
-	ixr := newIndexer(newDb(), cfg)
+	ixr := newIndexer(*svc)
 	resp, err = ixr.Index(req)
 
 	if err != nil {

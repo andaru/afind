@@ -45,11 +45,11 @@ func (b ByteSize) MarshalJSON() ([]byte, error) {
 
 // A Repo represents a single indexed repository of source code.
 type Repo struct {
-	Key       string            `json:"key"`        // Unique key
-	IndexPath string            `json:"index_path"` // Path to the .afindex file covering this Repo
-	Root      string            `json:"root"`       // Root path (under which Dirs are rooted)
-	Meta      map[string]string `json:"meta"`       // User configurable metadata for this Repo
-	State     RepoState         `json:"state"`      // Current repository indexing state
+	Key       string            `json:"key"`          // Unique key
+	IndexPath string            `json:"index_path"`   // Path to the .afindex file covering this Repo
+	Root      string            `json:"root"`         // Root path (under which Dirs are rooted)
+	Meta      map[string]string `json:"meta"`         // User configurable metadata for this Repo
+	State     RepoState         `json:"state,string"` // Current repository indexing state
 
 	// Metadata produced during indexing
 	NumDirs   int     `json:"num_dirs,string"`   // Number of directories indexed
@@ -139,7 +139,11 @@ type Indexer interface {
 	Index(request IndexRequest) (*IndexResponse, error)
 }
 
-// An IndexRequest is sent when creating (indexing) a Repo
+// An IndexRequest is sent when creating (indexing) a Repo.
+// The value of the 'host' and 'port.rpc' keys of the Meta attribute
+// are used by the indexer to determine whether to proxy the request
+// to another afindd. Leaving the keys unpopulated or empty will
+// cause indexing to happen on the local machine.
 type IndexRequest struct {
 	Key  string            `json:"key"`  // The Key for the new Repo
 	Root string            `json:"root"` // The root path for all dirs
@@ -186,10 +190,11 @@ func newIndexResponse() *IndexResponse {
 // If the user supplies one or more RepoKeys, only Repos matching those
 // key(s) are searched. If RepoKeys is empty all Repo are consulted.
 type SearchRequest struct {
-	Re, PathRe    string
-	CaseSensitive bool
-	RepoKeys      []string
-	Meta          map[string]string
+	Re            string            `json:"re"`
+	PathRe        string            `json:"path_re"`
+	CaseSensitive bool              `json:"cs"`
+	RepoKeys      []string          `json:"repo_keys"`
+	Meta          map[string]string `json:"meta"`
 }
 
 func newSearchRequest(re, pathRe string, cs bool, repoKeys []string) SearchRequest {

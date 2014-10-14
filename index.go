@@ -11,23 +11,12 @@ import (
 )
 
 type indexer struct {
-	repos  KeyValueStorer
-	config Config
-	client *rpcClient
+	svc   Service
+	repos KeyValueStorer
 }
 
-func newIndexer(repos KeyValueStorer, c Config) *indexer {
-	return &indexer{repos: repos, config: c}
-}
-
-func newIndexerRemote(repos KeyValueStorer, c Config, address string) (*indexer, error) {
-	var i *indexer
-
-	client, err := NewRpcClient(address)
-	if err == nil {
-		i = &indexer{repos: repos, config: c, client: client}
-	}
-	return i, err
+func newIndexer(svc Service) indexer {
+	return indexer{svc: svc, repos: svc.repos}
 }
 
 func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
@@ -47,19 +36,16 @@ func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
 }
 
 func (i indexer) indexPathPrefix(request *IndexRequest) string {
-	if i.config.IndexInRepo {
+	if i.svc.config.IndexInRepo {
 		return path.Join(request.Root, request.Key)
 	}
-	return path.Join(i.config.IndexRoot, request.Key)
+	return path.Join(i.svc.config.IndexRoot, request.Key)
 }
 
 func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err error) {
-	log.Info("local index %v (%d sub dirs)", request.Key, len(request.Dirs))
-	log.Debug("request %+v", request)
 	start := time.Now()
-
 	if err := validateIndexRequest(&request, i.repos); err != nil {
-		log.Debug("local index %v failed: %v", request.Key, err)
+		log.Debug("index %v failed: %v", request.Key, err)
 		return nil, err
 	}
 
@@ -69,7 +55,7 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	repo.IndexPath = i.indexPathPrefix(&request)
 
 	// Always create at least one shard
-	numShards := i.config.NumShards
+	numShards := i.svc.config.NumShards
 	if numShards < 1 {
 		numShards = 1
 	}
@@ -97,7 +83,7 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 
 	// Walk the paths, adding one to each shard round robin
 	var lasterr error
-	noireg := i.config.NoIndex()
+	noireg := i.svc.config.NoIndex()
 
 	numDirs := 0
 	numFiles := 0
@@ -175,26 +161,30 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 }
 
 func (i indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err error) {
-	log.Debug("remote index host [%s]", indexRequestHost(&request))
-	if i.client == nil {
+	host := indexRequestHost(&request)
+	log.Debug("remote index host [%s]", host)
+	// Try to get an available indexer on the host
+	client, err := i.svc.remotes.Get(host)
+	if client == nil {
 		return nil, newNoRpcClientError()
 	}
-	resp, err = i.client.Index(request)
+	resp, err = client.Index(request)
 	return resp, err
 }
 
 func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
-	log.Info("index %+v", request)
-	// Set initial metadata (e.g. host) from server defaults
+	log.Info("index %v root: %v meta: %v (%d dirs)",
+		request.Key, request.Root, request.Meta, len(request.Dirs))
 
+	// Set initial metadata (e.g. host) from server defaults
 	if request.Meta == nil {
 		request.Meta = make(map[string]string)
 	}
-
-	for k, v := range i.config.DefaultRepoMeta {
+	for k, v := range i.svc.config.DefaultRepoMeta {
 		request.Meta[k] = v
 	}
 
+	// Go local or proxy to a remote afindd
 	if i.isIndexLocal(&request) {
 		resp, err = i.indexLocal(request)
 	} else {
@@ -216,7 +206,7 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 }
 
 func indexRequestHost(request *IndexRequest) string {
-	host, ok := request.Meta["hostname"]
+	host, ok := request.Meta["host"]
 	if ok {
 		return host
 	}
@@ -224,7 +214,7 @@ func indexRequestHost(request *IndexRequest) string {
 }
 
 func (i indexer) isIndexLocal(request *IndexRequest) bool {
-	localhost, _ := i.config.DefaultRepoMeta["hostname"]
+	localhost, _ := i.svc.config.DefaultRepoMeta["host"]
 	if len(localhost) == 0 {
 		return true
 	}

@@ -2,7 +2,9 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/andaru/afind"
+	"os"
 )
 
 func init() {
@@ -11,6 +13,7 @@ func init() {
 	// which will default to the hostname reported by the kernel.
 	flag.Var(&flagMeta, "D",
 		"A key=value default repository metadata field (may be repeated)")
+	flag.Usage = usage
 }
 
 var (
@@ -26,11 +29,22 @@ var (
 		"Run HTTP server on this address:port")
 	flagHttpsBind = flag.String("https", ":30880",
 		"Run HTTPS server on this address:port")
-	flagNanomsgBind = flag.String("nanomsg", ":30801",
-		"Run nanomsg (mangos) pubsub server on this address:port")
 	flagNumShards = flag.Int("nshards", 2,
-		"Number of Repo shards created per indexing request")
+		"Number of file shards created per Repo indexing request")
 	flagDbFile = flag.String("dbfile", "",
-		"The database (JSON) backing store")
+		"The Repo persistent storage backing (JSON)")
 	flagMeta = make(afind.FlagSSMap)
 )
+
+func usage() {
+	fmt.Fprintln(os.Stderr,
+		`afindd : distributed text search server daemon
+
+Usage:
+  afindd [options]
+
+afindd does not fork, and writes logs to stderr.
+
+Options:`)
+	flag.PrintDefaults()
+}
