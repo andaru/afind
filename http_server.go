@@ -15,10 +15,6 @@ type webService struct {
 }
 
 func (ws *webService) start() (err error) {
-	if ws.router == nil {
-		panic("HTTP URL router not yet setup")
-	}
-
 	if ws.config.HttpBind != "" {
 		go func() {
 			err = http.ListenAndServe(ws.config.HttpBind, ws.router)
@@ -35,6 +31,7 @@ func (ws *webService) setupHandlers() {
 	ws.router.GET("/repo", ws.GetAllRepos)
 	ws.router.POST("/repo", ws.PostRepo)
 	ws.router.POST("/search", ws.Search)
+	ws.router.DELETE("/repo/:key", ws.DeleteRepo)
 }
 
 func newWebService(service *Service) *webService {
@@ -54,6 +51,20 @@ func httpError(t, msg, remedy string) *map[string]string {
 }
 
 // Webservice Request Handlers
+
+func (ws *webService) DeleteRepo(
+	rw http.ResponseWriter, req *http.Request, ps httprouter.Params) {
+
+	key := ps.ByName("key")
+	if err := ws.repos.Delete(key); err == nil {
+		rw.WriteHeader(200)
+	} else {
+		enc := json.NewEncoder(rw)
+		rw.WriteHeader(500)
+		_ = enc.Encode(
+			httpError("delete_repo_error", err.Error(), ""))
+	}
+}
 
 func (ws *webService) GetRepo(
 	rw http.ResponseWriter, req *http.Request, ps httprouter.Params) {
@@ -107,7 +118,7 @@ func (ws *webService) PostRepo(
 	} else {
 		rw.WriteHeader(500)
 		_ = enc.Encode(
-			httpError("indexing_error", err.Error(), ""))
+			httpError("index_error", err.Error(), ""))
 	}
 }
 

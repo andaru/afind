@@ -36,6 +36,13 @@ func (client *RpcClient) GetRepo(key string) (*map[string]*Repo, error) {
 
 func (client *RpcClient) GetAllRepos() (*map[string]*Repo, error) {
 	repos := make(map[string]*Repo)
-	err := client.Call("Afind.GetAllRepos", struct{}{}, &repos)
-	return &repos, err
+	rpcCall := client.Go("Afind.GetAllRepos", struct{}{}, &repos, nil)
+	call := <-rpcCall.Done
+	return call.Reply.(*map[string]*Repo), call.Error
+}
+
+func (client *RpcClient) DeleteRepo(key string) error {
+	rpcCall := client.Go("Afind.DeleteRepo", nil, nil, nil)
+	call := <-rpcCall.Done
+	return call.Error
 }

@@ -132,19 +132,23 @@ type Searcher interface {
 }
 
 // An Indexer can Index one or more Repos
+//
+// The Index call will not replace any Repo with a key matching that
+// in the request.
 type Indexer interface {
 	Index(request IndexRequest) (*IndexResponse, error)
 }
 
-// An IndexRequest is the metadata for creating one or more Repo.
+// An IndexRequest is sent when creating (indexing) a Repo
 type IndexRequest struct {
-	Key  string
-	Root string
-	Dirs []string
-	Meta map[string]string // metadata applied to all new repos
+	Key  string            `json:"key"`  // The Key for the new Repo
+	Root string            `json:"root"` // The root path for all dirs
+	Dirs []string          `json:"dirs"` // Sub directories of root to index
+	Meta map[string]string `json:"meta"` // metadata applied to all new repos
 }
 
-// The response to calls to Indexer.Index.
+// The response to index calls. Contains details about the Repo
+// indexed on the 'host' indicated in Repo.Meta
 type IndexResponse struct {
 	Repo    *Repo `json:"repo"`
 	Elapsed time.Duration

@@ -15,7 +15,7 @@ import (
 type searcher struct {
 	config Config
 	repos  KeyValueStorer
-	client *RpcClient
+	client *rpcClient
 }
 
 func newSearcher(repos KeyValueStorer, c Config) *searcher {
@@ -113,7 +113,10 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	}
 
 	timeout := s.config.TimeoutSearch()
-	log.Debug("search waiting for %d shards (timeout %v)", total, timeout)
+	startShardWait := time.Now()
+	totalShards := total
+	log.Debug("search awaiting %d shards (timeout %ds)",
+		totalShards, s.config.timeoutSearch)
 
 	for total > 0 {
 		select {
@@ -124,6 +127,10 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 			mergeResponse(newSr, sr)
 			total--
 		}
+	}
+	if total == 0 {
+		log.Debug("search %d shards returned in %v",
+			totalShards, time.Since(startShardWait))
 	}
 	sr.Elapsed = time.Since(start)
 	log.Info("Search [%v] path: [%v] complete in %v (%d repos)",

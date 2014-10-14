@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/andaru/afind"
-	"github.com/andaru/afind/common"
 	"github.com/op/go-logging"
 )
 
@@ -188,7 +187,7 @@ func printMatches(sr *afind.SearchResponse) {
 
 func main() {
 	flag.Parse()
-	common.LoggerStderr()
+	afind.LoggerStderr()
 	logging.SetFormatter(logging.DefaultFormatter)
 
 	if len(flag.Args()) < 1 {

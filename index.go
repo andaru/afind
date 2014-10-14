@@ -13,7 +13,7 @@ import (
 type indexer struct {
 	repos  KeyValueStorer
 	config Config
-	client *RpcClient
+	client *rpcClient
 }
 
 func newIndexer(repos KeyValueStorer, c Config) *indexer {
