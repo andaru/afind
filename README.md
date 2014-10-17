@@ -80,7 +80,7 @@ is equivalent to the following HTTP request:
 
     $ curl -d '{"key": "123", \
                 "root": "/var/proj/root", \
-                "meta": {"project": "123"}, \
+                "meta": {"project": "mainline"}, \
                 "dirs": ["src/dir1", "src/dir2"]}' http://localhost:30880/repo
 
 ### Searching
