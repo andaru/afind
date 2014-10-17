@@ -154,6 +154,7 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	resp.Elapsed = time.Since(start)
 	if err != nil {
 		repo.State = ERROR
+		resp.Error = err.Error()
 	} else {
 		repo.State = OK
 	}
@@ -162,7 +163,8 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 }
 
 func (i indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err error) {
-	addr := metaRpcAddress(request.Meta)
+	defaultPort := i.svc.config.DefaultRepoMeta["port.rpc"]
+	addr := metaRpcAddress(request.Meta, defaultPort)
 	log.Debug("index remote [%s]", addr)
 
 	client, err := i.svc.remotes.Get(addr)
@@ -177,6 +179,8 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	start := time.Now()
 	log.Info("index %v root: %v meta: %v (%d dirs)",
 		request.Key, request.Root, request.Meta, len(request.Dirs))
+	log.Debug("index %v recursive: %v dirs: %v",
+		request.Key, request.Recurse, request.Dirs)
 
 	if request.Meta == nil {
 		request.Meta = make(map[string]string)
@@ -191,25 +195,27 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	// Go local or proxy to a remote afindd
 	if i.isIndexLocal(&request) {
 		resp, err = i.indexLocal(request)
-	} else {
-		request.SetRecursion(false)
+	} else if request.Recurse {
+		request.Recurse = false
 		resp, err = i.indexRemote(request)
 	}
-	if err == nil {
-		if resp != nil && resp.Repo != nil {
-			if e := i.repos.Set(resp.Repo.Key, resp.Repo); e != nil {
-				log.Critical("error setting key %s: %v",
-					resp.Repo.Key, e.Error())
-			}
+	if err == nil && resp != nil && resp.Repo != nil {
+		if e := i.repos.Set(resp.Repo.Key, resp.Repo); e != nil {
+			log.Critical("error setting key %s: %v",
+				resp.Repo.Key, e.Error())
 		}
 	}
 	log.Debug("index %v completed in %v", request.Key, time.Since(start))
+	if err != nil {
+		log.Error(err.Error())
+	}
 	return
 }
 
 func (i indexer) isIndexLocal(request *IndexRequest) (local bool) {
-	localaddr := metaRpcAddress(i.svc.config.DefaultRepoMeta)
-	addr := metaRpcAddress(request.Meta)
+	defaultPort := i.svc.config.DefaultRepoMeta["port.rpc"]
+	localaddr := metaRpcAddress(i.svc.config.DefaultRepoMeta, defaultPort)
+	addr := metaRpcAddress(request.Meta, defaultPort)
 	if localaddr == ":" {
 		local = true
 	} else if localaddr != addr {

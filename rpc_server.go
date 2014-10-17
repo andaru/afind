@@ -19,8 +19,8 @@ func (rs *rpcService) Search(req SearchRequest, resp *SearchResponse) error {
 
 func (rs *rpcService) Index(req IndexRequest, response *IndexResponse) error {
 	start := time.Now()
-
 	request := newIndexRequestWithMeta(req.Key, req.Root, req.Dirs, req.Meta)
+	log.Debug("rpc.Index request=%+v", request)
 	ir, err := rs.Indexer.Index(request)
 	if err != nil {
 		return err

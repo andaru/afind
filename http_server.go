@@ -105,12 +105,13 @@ func (ws *webService) PostRepo(
 	if err := dec.Decode(&ir); err != nil {
 		rw.WriteHeader(403)
 		_ = enc.Encode(
-			httpError("invalid_request", "badly formatted JSON request",
+			httpError("invalid_request", err.Error(),
 				"Provide a valid JSON IndexRequest"))
 		return
 	}
 
 	// Generate the index
+	ir.SetRecursion(true)
 	indexResponse, err := ws.Indexer.Index(ir)
 	if err == nil {
 		rw.WriteHeader(200)
@@ -138,7 +139,7 @@ func (ws *webService) Search(
 		return
 	}
 	// Allow single recursive query to perform master->backend resolution
-	sr.SetRecursion(true)
+	sr.Recurse = true
 	sresp, err := ws.Searcher.Search(sr)
 	if err == nil {
 		rw.WriteHeader(200)

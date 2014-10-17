@@ -52,6 +52,7 @@ func repoMetaMatchesSearch(repo *Repo, request *SearchRequest) bool {
 func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	log.Info("search [%v] path: [%v] keys: %v cs: %v",
 		request.Re, request.PathRe, request.RepoKeys, request.CaseSensitive)
+	log.Info("search request=%#v", request)
 
 	var err error
 	start := time.Now()
@@ -87,6 +88,7 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	log.Debug("search consulting %d repos", len(repos))
 
 	for _, repo := range repos {
+		log.Debug("repo: %#v", repo)
 		if s.isSearchLocal(repo) {
 			shards := getShards(repo)
 			for _, shard := range shards {
@@ -97,13 +99,14 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 				}(shard, repo)
 
 			}
-		} else if request.recurse {
-			request.SetRecursion(false)
+		} else if request.Recurse {
+			request.Recurse = false
 			total++
-			go func() {
-				newSr, _ := s.searchRemote(repo, request)
+			go func(r *Repo, req SearchRequest) {
+				log.Debug("remote r=%#v req=%#v", r, req)
+				newSr, _ := s.searchRemote(r, req)
 				ch <- newSr
-			}()
+			}(repo, request)
 		}
 	}
 
@@ -144,13 +147,18 @@ func getmeta(t interface{}) map[string]string {
 	}
 }
 
-func metaRpcAddress(meta map[string]string) string {
-	return meta["host"] + ":" + meta["port.rpc"]
+func metaRpcAddress(meta map[string]string, defaultPort string) string {
+	port := meta["port.rpc"]
+	if port == "" {
+		port = defaultPort
+	}
+	return meta["host"] + ":" + port
 }
 
 func (s searcher) isSearchLocal(repo *Repo) (local bool) {
-	localaddr := metaRpcAddress(s.svc.config.DefaultRepoMeta)
-	addr := metaRpcAddress(repo.Meta)
+	defaultPort := s.svc.config.DefaultRepoMeta["port.rpc"]
+	localaddr := metaRpcAddress(s.svc.config.DefaultRepoMeta, defaultPort)
+	addr := metaRpcAddress(repo.Meta, defaultPort)
 	if localaddr == ":" {
 		local = true
 	} else if localaddr != addr {
@@ -177,14 +185,20 @@ func (s *searcher) searchLocal(repo *Repo, fname string, request SearchRequest) 
 func (s *searcher) searchRemote(repo *Repo, request SearchRequest) (
 	resp *SearchResponse, err error) {
 
-	client, err := s.svc.remotes.Get(addressFromRepo(repo))
-	if err != nil {
-		resp = newPopSearchResponse(repo, err)
-	}
-	request.RepoKeys = []string{repo.Key}
-	resp, err = client.Search(request)
-	if resp == nil {
-		resp = newPopSearchResponse(repo, err)
+	client, err := s.svc.remotes.Get(metaRpcAddress(
+		repo.Meta, s.svc.config.DefaultRepoMeta["port.rpc"]))
+	if client == nil {
+		if err != nil {
+			log.Error("no RPC client available: %v", err)
+		}
+		resp = newPopSearchResponse(repo, newNoRpcClientError())
+	} else {
+		log.Debug("searchRemote client=%#v err=%v", client, err)
+		request.RepoKeys = []string{repo.Key}
+		resp, err = client.Search(request)
+		if resp == nil {
+			resp = newPopSearchResponse(repo, err)
+		}
 	}
 	return
 }

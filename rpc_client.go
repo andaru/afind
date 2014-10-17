@@ -44,10 +44,16 @@ func (client *rpcClient) Index(request IndexRequest) (*IndexResponse, error) {
 }
 
 func (client *rpcClient) Search(request SearchRequest) (*SearchResponse, error) {
-	sr := newSearchResponse()
-	err := client.Call("Afind.Search", request, sr)
+	log.Debug("request=%#v", request)
+	sr := SearchResponse{
+		Files:  make(map[string]map[string]map[string]string),
+		Errors: make(map[string]string),
+	}
+	rpcCall := client.Go("Afind.Search", &request, &sr, nil)
+	call := <-rpcCall.Done
+	log.Debug("err=%v", call.Error)
 	client.stats.callsSearch++
-	return sr, err
+	return &sr, call.Error
 }
 
 func (client *rpcClient) GetRepo(key string) (*map[string]*Repo, error) {
@@ -129,7 +135,6 @@ func (r *Remotes) Get(address string) (*rpcClient, error) {
 			if strings.HasPrefix(endpoint, address) {
 				// this'll do
 				address = endpoint
-				log.Debug("address now %v", address)
 				break
 			}
 		}
@@ -176,8 +181,11 @@ func (r *Remotes) Close(host, rpcPort string) error {
 	return nil
 }
 
-func addressFromRepo(repo *Repo) string {
-	host, _ := repo.Meta["host"]
+func addressFromRepo(repo *Repo, defaultPort string) string {
+	host := repo.Meta["host"]
 	port, _ := repo.Meta["port"]
+	if port == "" {
+		port = defaultPort
+	}
 	return host + ":" + port
 }
