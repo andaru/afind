@@ -176,12 +176,14 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	log.Info("index %v root: %v meta: %v (%d dirs)",
 		request.Key, request.Root, request.Meta, len(request.Dirs))
 
-	// Set initial metadata (e.g. host) from server defaults
 	if request.Meta == nil {
 		request.Meta = make(map[string]string)
 	}
+	// Metedata: merge in empty keys from default repo metadata
 	for k, v := range i.svc.config.DefaultRepoMeta {
-		request.Meta[k] = v
+		if _, ok := request.Meta[k]; !ok {
+			request.Meta[k] = v
+		}
 	}
 
 	// Go local or proxy to a remote afindd

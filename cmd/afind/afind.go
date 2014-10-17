@@ -77,12 +77,12 @@ func usageRepos() {
 	fmt.Fprintln(os.Stderr, `afind repos : display and delete repositories
 
 Usage:
-  afind repos [-D] [key]
+  afind repos [-D] [key] [key...]
 
-If key is provided, -D will delete that single repository.
-Otherwise, details about the one repository are displayed.
-If key is not provided, -D is not available and details of
-all repositories are printed.
+If a single key only is provided, -D will delete that repository.
+Otherwise, details about the one repository are displayed.  If key is
+not provided, -D is not available and details of all repositories are
+printed.
 
 Options:`)
 	flagSetRepos.PrintDefaults()
@@ -293,8 +293,10 @@ func doAfind() error {
 		}
 		if len(args) == 0 {
 			err = repos(context, "")
-		} else {
-			err = repos(context, args[0])
+		} else if len(args) > 0 {
+			for _, arg := range args {
+				err = repos(context, arg)
+			}
 		}
 	}
 	return err
