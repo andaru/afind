@@ -10,8 +10,7 @@
 
 `afind` | distributed code search
 ---------------------------------
-
- <img src="https://travis-ci.org/andaru/afind.svg?branch=develop"/>
+[![Build Status](https://travis-ci.org/andaru/afind.svg?branch=develop)](https://travis-ci.org/andaru/afind)
  
 afind is a distributed code search service based on Russ Cox's
 codesearch libraries.  A daemon (running either as a backend
@@ -94,6 +93,11 @@ The `afind` CLI command:
 Is equivalent to the HTTP request:
 
     $ curl -d '{"re": "foobar"}' http://localhost:30880/search
+    
+To search in source repos for a particular project:
+
+    $ curl -d '{"re": "foobar", meta: {"project": "mainline"}}' http://localhost:30880/search
+
 
 Contact
 -------
