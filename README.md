@@ -11,10 +11,12 @@
 `afind` | distributed code search
 ---------------------------------
 
-afind is a distributed code search engine based on Russ Cox's
-codesearch libraries.  A network daemon (running either as a backend
+ <img src="https://travis-ci.org/andaru/afind.svg?branch=develop"/>
+ 
+afind is a distributed code search service based on Russ Cox's
+codesearch libraries.  A daemon (running either as a backend
 or a master/backend) and a command line interface are provided. The
-network daemon 'afindd' offers a REST interface and a backend
+network daemon 'afindd' offers a REST interface and an RPC
 interface used by other afindd instances.
 
 Installation
@@ -66,7 +68,7 @@ the afind service like so:
 
 HTTP server
 -----------
-If the -httpbind argument is supplied, afindd will operate a JSON/REST
+If the `-httpbind` argument is supplied, afindd will operate a JSON/REST
 interface for access to repository metadata, search and indexing.
 Here's some quick notes about the URL and request formats.
 
