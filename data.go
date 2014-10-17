@@ -149,6 +149,12 @@ type IndexRequest struct {
 	Root string            `json:"root"` // The root path for all dirs
 	Dirs []string          `json:"dirs"` // Sub directories of root to index
 	Meta map[string]string `json:"meta"` // metadata applied to all new repos
+
+	recurse bool
+}
+
+func (ir *IndexRequest) SetRecursion(rec bool) {
+	ir.recurse = rec
 }
 
 // The response to index calls. Contains details about the Repo
@@ -195,6 +201,10 @@ type SearchRequest struct {
 	CaseSensitive bool              `json:"cs"`
 	RepoKeys      []string          `json:"repo_keys"`
 	Meta          map[string]string `json:"meta"`
+
+	// Recursive query: set to have afindd make recursive
+	// requests (with this bit not set).
+	recurse bool
 }
 
 func newSearchRequest(re, pathRe string, cs bool, repoKeys []string) SearchRequest {
@@ -208,6 +218,10 @@ func newSearchRequest(re, pathRe string, cs bool, repoKeys []string) SearchReque
 		req.RepoKeys[i] = key
 	}
 	return req
+}
+
+func (sr *SearchRequest) SetRecursion(rec bool) {
+	sr.recurse = rec
 }
 
 // The response struct used for a Repo Search.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/andaru/codesearch/index"
 	"github.com/andaru/codesearch/regexp"
+	"strings"
 )
 
 type searcher struct {
@@ -29,9 +30,12 @@ func mergeResponse(in *SearchResponse, out *SearchResponse) {
 		for repo, matches := range rmatches {
 			out.Files[file][repo] = matches
 		}
-		// todo: make accurate for overlaps
-		out.NumLinesMatched += in.NumLinesMatched
 	}
+	for k, v := range in.Errors {
+		out.Errors[k] = v
+	}
+	// todo: make accurate for overlaps
+	out.NumLinesMatched += in.NumLinesMatched
 }
 
 func repoMetaMatchesSearch(repo *Repo, request *SearchRequest) bool {
@@ -53,7 +57,7 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	start := time.Now()
 	sr := newSearchResponse()
 
-	// Select repos to search based
+	// Select repos to search, first considering repo keys
 	repos := make(map[string]*Repo)
 	for _, key := range request.RepoKeys {
 		if value := s.repos.Get(key); value != nil {
@@ -62,7 +66,7 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	}
 
 	if len(repos) == 0 {
-		// Consider all repos
+		// Consider all repos if none matched or were provided
 		s.repos.ForEach(func(key string, value interface{}) bool {
 			repo := value.(*Repo)
 			if repoMetaMatchesSearch(repo, &request) {
@@ -72,6 +76,7 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 		})
 	}
 
+	// Finally, error out if there's no available Repos to search
 	if len(repos) == 0 {
 		return nil, newNoRepoAvailableError()
 	}
@@ -92,7 +97,8 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 				}(shard, repo)
 
 			}
-		} else {
+		} else if request.recurse {
+			request.SetRecursion(false)
 			total++
 			go func() {
 				newSr, _ := s.searchRemote(repo, request)
@@ -109,41 +115,56 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	for total > 0 {
 		select {
 		case <-timeout:
-			log.Debug("search timed out")
-			break
+			log.Debug("search timed out after %v",
+				time.Since(startShardWait))
 		case newSr := <-ch:
 			mergeResponse(newSr, sr)
 			total--
 		}
 	}
+
 	if total == 0 {
 		log.Debug("search %d shards returned in %v",
 			totalShards, time.Since(startShardWait))
 	}
 	sr.Elapsed = time.Since(start)
-	log.Info("Search [%v] path: [%v] complete in %v (%d repos)",
+	log.Info("search [%v] path: [%v] complete in %v (%d repos)",
 		request.Re, request.PathRe, sr.Elapsed, len(repos))
 	return sr, err
 }
 
-func repoHost(repo *Repo) string {
-	host, ok := repo.Meta["hostname"]
-	if ok {
-		return host
+func getmeta(t interface{}) map[string]string {
+	switch t := t.(type) {
+	case *IndexRequest:
+		return t.Meta
+	case *Repo:
+		return t.Meta
+	default:
+		return make(map[string]string)
 	}
-	return ""
 }
 
-func (s searcher) isSearchLocal(repo *Repo) bool {
-	localhost, _ := s.svc.config.DefaultRepoMeta["hostname"]
-	if len(localhost) == 0 {
-		return true
+func metaRpcAddress(meta map[string]string) string {
+	return meta["host"] + ":" + meta["port.rpc"]
+}
+
+func (s searcher) isSearchLocal(repo *Repo) (local bool) {
+	localaddr := metaRpcAddress(s.svc.config.DefaultRepoMeta)
+	addr := metaRpcAddress(repo.Meta)
+	if localaddr == ":" {
+		local = true
+	} else if localaddr != addr {
+		// to avoid infinite recursion, if the addresses
+		// match on prefix, they're probably the same host.
+		if strings.HasPrefix(localaddr, repo.Meta["host"]) {
+			local = true
+		}
+	} else {
+		local = true
 	}
-	host := repoHost(repo)
-	if localhost != host {
-		return false
-	}
-	return true
+	log.Debug("isSearchLocal local=%v other=%v isLocal=%v",
+		localaddr, addr, local)
+	return local
 }
 
 func (s *searcher) searchLocal(repo *Repo, fname string, request SearchRequest) (

@@ -153,7 +153,7 @@ func search(context *ctx, query string) error {
 			*flagRpcAddress)
 		return err
 	}
-
+	request.SetRecursion(true)
 	sr, err := client.Search(request)
 	if err == nil {
 		printMatches(sr)

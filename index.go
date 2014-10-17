@@ -4,10 +4,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/andaru/codesearch/index"
-	"strconv"
 )
 
 type indexer struct {
@@ -173,6 +174,7 @@ func (i indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err err
 }
 
 func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
+	start := time.Now()
 	log.Info("index %v root: %v meta: %v (%d dirs)",
 		request.Key, request.Root, request.Meta, len(request.Dirs))
 
@@ -190,12 +192,10 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	if i.isIndexLocal(&request) {
 		resp, err = i.indexLocal(request)
 	} else {
+		request.SetRecursion(false)
 		resp, err = i.indexRemote(request)
 	}
 	if err == nil {
-		log.Info("index %v (%s/%s index/data) created in %v",
-			resp.Repo.Key, resp.Repo.sizeIndex,
-			resp.Repo.sizeData, resp.Elapsed)
 		if resp != nil && resp.Repo != nil {
 			if e := i.repos.Set(resp.Repo.Key, resp.Repo); e != nil {
 				log.Critical("error setting key %s: %v",
@@ -203,17 +203,19 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 			}
 		}
 	}
+	log.Debug("index %v completed in %v", request.Key, time.Since(start))
 	return
 }
 
-func (i indexer) isIndexLocal(request *IndexRequest) bool {
-	var local bool
+func (i indexer) isIndexLocal(request *IndexRequest) (local bool) {
 	localaddr := metaRpcAddress(i.svc.config.DefaultRepoMeta)
 	addr := metaRpcAddress(request.Meta)
 	if localaddr == ":" {
 		local = true
 	} else if localaddr != addr {
-		local = false
+		if strings.HasPrefix(localaddr, request.Meta["host"]) {
+			local = true
+		}
 	} else {
 		local = true
 	}

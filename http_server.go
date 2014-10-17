@@ -137,16 +137,15 @@ func (ws *webService) Search(
 				"Fix the request format"))
 		return
 	}
-
+	// Allow single recursive query to perform master->backend resolution
+	sr.SetRecursion(true)
 	sresp, err := ws.Searcher.Search(sr)
 	if err == nil {
-		if err == nil {
-			rw.WriteHeader(200)
-			_ = enc.Encode(sresp)
-		} else {
-			rw.WriteHeader(500)
-			_ = enc.Encode(
-				httpError("search_error", err.Error(), ""))
-		}
+		rw.WriteHeader(200)
+		_ = enc.Encode(sresp)
+	} else {
+		rw.WriteHeader(500)
+		_ = enc.Encode(
+			httpError("search_error", err.Error(), ""))
 	}
 }
