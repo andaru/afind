@@ -161,10 +161,10 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 }
 
 func (i indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err error) {
-	host := indexRequestHost(&request)
-	log.Debug("remote index host [%s]", host)
-	// Try to get an available indexer on the host
-	client, err := i.svc.remotes.Get(host)
+	addr := metaRpcAddress(request.Meta)
+	log.Debug("index remote [%s]", addr)
+
+	client, err := i.svc.remotes.Get(addr)
 	if client == nil {
 		return nil, newNoRpcClientError()
 	}
@@ -196,33 +196,28 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 		log.Info("index %v (%s/%s index/data) created in %v",
 			resp.Repo.Key, resp.Repo.sizeIndex,
 			resp.Repo.sizeData, resp.Elapsed)
-	}
-	if resp != nil {
-		err = i.repos.Set(resp.Repo.Key, resp.Repo)
-		if err != nil {
-			log.Critical("error setting repo key %s: %v",
-				resp.Repo.Key, err.Error())
+		if resp != nil && resp.Repo != nil {
+			if e := i.repos.Set(resp.Repo.Key, resp.Repo); e != nil {
+				log.Critical("error setting key %s: %v",
+					resp.Repo.Key, e.Error())
+			}
 		}
 	}
 	return
 }
 
-func indexRequestHost(request *IndexRequest) string {
-	host, ok := request.Meta["host"]
-	if ok {
-		return host
-	}
-	return ""
-}
-
 func (i indexer) isIndexLocal(request *IndexRequest) bool {
-	localhost, _ := i.svc.config.DefaultRepoMeta["host"]
-	if len(localhost) == 0 {
-		return true
+	var local bool
+	localaddr := metaRpcAddress(i.svc.config.DefaultRepoMeta)
+	addr := metaRpcAddress(request.Meta)
+	if localaddr == ":" {
+		local = true
+	} else if localaddr != addr {
+		local = false
+	} else {
+		local = true
 	}
-	host := indexRequestHost(request)
-	if localhost != host {
-		return false
-	}
-	return true
+	log.Debug("isIndexLocal local=%v other=%v isLocal=%v",
+		localaddr, addr, local)
+	return local
 }
