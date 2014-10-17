@@ -88,7 +88,6 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	log.Debug("search consulting %d repos", len(repos))
 
 	for _, repo := range repos {
-		log.Debug("repo: %#v", repo)
 		if s.isSearchLocal(repo) {
 			shards := getShards(repo)
 			for _, shard := range shards {
@@ -100,10 +99,10 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 
 			}
 		} else if request.Recurse {
-			request.Recurse = false
 			total++
 			go func(r *Repo, req SearchRequest) {
 				log.Debug("remote r=%#v req=%#v", r, req)
+				req.Recurse = false
 				newSr, _ := s.searchRemote(r, req)
 				ch <- newSr
 			}(repo, request)

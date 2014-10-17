@@ -44,16 +44,11 @@ func (client *rpcClient) Index(request IndexRequest) (*IndexResponse, error) {
 }
 
 func (client *rpcClient) Search(request SearchRequest) (*SearchResponse, error) {
-	log.Debug("request=%#v", request)
-	sr := SearchResponse{
-		Files:  make(map[string]map[string]map[string]string),
-		Errors: make(map[string]string),
-	}
-	rpcCall := client.Go("Afind.Search", &request, &sr, nil)
+	sr := newSearchResponse()
+	rpcCall := client.Go("Afind.Search", &request, sr, nil)
 	call := <-rpcCall.Done
-	log.Debug("err=%v", call.Error)
 	client.stats.callsSearch++
-	return &sr, call.Error
+	return sr, call.Error
 }
 
 func (client *rpcClient) GetRepo(key string) (*map[string]*Repo, error) {
