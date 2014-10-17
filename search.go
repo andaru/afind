@@ -65,8 +65,8 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 		}
 	}
 
-	if len(repos) == 0 {
-		// Consider all repos if none matched or were provided
+	if len(request.RepoKeys) == 0 {
+		// Consider all repos if none were provided
 		s.repos.ForEach(func(key string, value interface{}) bool {
 			repo := value.(*Repo)
 			if repoMetaMatchesSearch(repo, &request) {
