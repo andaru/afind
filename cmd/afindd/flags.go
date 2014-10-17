@@ -29,7 +29,7 @@ var (
 		"Run HTTP server on this address:port")
 	flagHttpsBind = flag.String("https", ":30880",
 		"Run HTTPS server on this address:port")
-	flagNumShards = flag.Int("nshards", 2,
+	flagNumShards = flag.Int("nshards", 4,
 		"Number of file shards created per Repo indexing request")
 	flagDbFile = flag.String("dbfile", "",
 		"The Repo persistent storage backing (JSON)")
