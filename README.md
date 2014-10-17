@@ -39,17 +39,17 @@ you're running afindd and want it to reload existing configuration at startup.
 
     $ afindd -dbfile="/tmp/afind/backing_store.json"
 
-Now afind is running, you can index some text and make queries
+Now afind is running, you can index some text or source code, and make queries.
 
 Indexing repositories
 ---------------------
 
 The `afind` command line tool is used to index, view and search reopsitories:
 
-    $ afind -D project=foobar index id /path/to/root subdir1 subdir2/subdir3
+    $ afind index -D project=foobar ID /path/to/root subdir1 subdir2/subdir3
 
 The above command will create and index a new repository with Key
-`id`, whose root path is `root` and that will index recursively the
+`ID`, whose root path is `root` and that will index recursively the
 subdirs provided under root. Subdirs *must be non-absolute* (i.e.,
 have no leading `/`). To specify everything in the root, use the
 single subdirectory `.`.  The indexed repository will also have the
@@ -57,12 +57,41 @@ additional metadata key `project` with value `foobar`, in addition
 to the default `host` and `port.*` metadata values inserted by the
 server to indicate where the repository is located.
 
-Searcing
---------
+Searching
+---------
+Once you've indexed some code, search for it across all repos known to
+the afind service like so:
 
-Once you've indexed some code, to search using the `afind` tool:
+    $ afind search foo.*bar
+
+HTTP server
+-----------
+If the -httpbind argument is supplied, afindd will operate a JSON/REST
+interface for access to repository metadata, search and indexing.
+Here's some quick notes about the URL and request formats.
+
+### Indexing
+
+If using `-httpbind=:30880` for afindd, the `afind` CLI command:
+
+    $ afind index -D project=mainline 123 /var/proj/root src/dir1 src/dir2
+
+is equivalent to the following HTTP request:
+
+    $ curl -d '{"key": "123", \
+                "root": "/var/proj/root", \
+                "meta": {"project": "123"}, \
+                "dirs": ["src/dir1", "src/dir2"]}' http://localhost:30880/repo
+
+### Searching
+
+The `afind` CLI command:
 
     $ afind search foobar
+
+Is equivalent to the HTTP request:
+
+    $ curl -d '{"re": "foobar"}' http://localhost:30880/search
 
 Contact
 -------
