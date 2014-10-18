@@ -33,7 +33,8 @@ var (
 		"Number of file shards created per Repo indexing request")
 	flagDbFile = flag.String("dbfile", "",
 		"The Repo persistent storage backing (JSON)")
-	flagMeta = make(afind.FlagSSMap)
+	flagVerbose = flag.Bool("v", false, "Log verbosely")
+	flagMeta    = make(afind.FlagSSMap)
 )
 
 func usage() {

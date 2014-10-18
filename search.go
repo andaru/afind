@@ -23,19 +23,21 @@ func newSearcher(svc Service) searcher {
 }
 
 func mergeResponse(in *SearchResponse, out *SearchResponse) {
+	var nummatch int64
+
 	for file, rmatches := range in.Files {
 		if _, ok := out.Files[file]; !ok {
 			out.Files[file] = make(map[string]map[string]string)
 		}
 		for repo, matches := range rmatches {
+			nummatch += int64(len(matches))
 			out.Files[file][repo] = matches
 		}
 	}
 	for k, v := range in.Errors {
 		out.Errors[k] = v
 	}
-	// todo: make accurate for overlaps
-	out.NumLinesMatched += in.NumLinesMatched
+	out.NumLinesMatched += nummatch
 }
 
 func repoMetaMatchesSearch(repo *Repo, request *SearchRequest) bool {
@@ -50,9 +52,9 @@ func repoMetaMatchesSearch(repo *Repo, request *SearchRequest) bool {
 }
 
 func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
-	log.Info("search [%v] path: [%v] keys: %v cs: %v",
-		request.Re, request.PathRe, request.RepoKeys, request.CaseSensitive)
-	log.Info("search request=%#v", request)
+	log.Info("search [%v] path: [%v] keys: %v cs: %v meta: %v",
+		request.Re, request.PathRe, request.RepoKeys, request.CaseSensitive,
+		request.Meta)
 
 	var err error
 	start := time.Now()
@@ -130,8 +132,9 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 			totalShards, time.Since(startShardWait))
 	}
 	sr.Elapsed = time.Since(start)
-	log.Info("search [%v] path: [%v] complete in %v (%d repos)",
-		request.Re, request.PathRe, sr.Elapsed, len(repos))
+	log.Info("search [%v] path: [%v] complete in %v (%d/%d matches/repos)",
+		request.Re, request.PathRe, sr.Elapsed, sr.NumLinesMatched,
+		len(repos))
 	return sr, err
 }
 
@@ -192,7 +195,6 @@ func (s *searcher) searchRemote(repo *Repo, request SearchRequest) (
 		}
 		resp = newPopSearchResponse(repo, newNoRpcClientError())
 	} else {
-		log.Debug("searchRemote client=%#v err=%v", client, err)
 		request.RepoKeys = []string{repo.Key}
 		resp, err = client.Search(request)
 		if resp == nil {

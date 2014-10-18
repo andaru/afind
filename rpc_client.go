@@ -38,9 +38,10 @@ func newRpcClientFromRemotes(server string, remotes *Remotes) (*rpcClient, error
 
 func (client *rpcClient) Index(request IndexRequest) (*IndexResponse, error) {
 	indexResponse := newIndexResponse()
-	err := client.Call("Afind.Index", request, indexResponse)
+	rpcCall := client.Go("Afind.Index", request, indexResponse, nil)
+	call := <-rpcCall.Done
 	client.stats.callsIndex++
-	return indexResponse, err
+	return call.Reply.(*IndexResponse), call.Error
 }
 
 func (client *rpcClient) Search(request SearchRequest) (*SearchResponse, error) {
@@ -53,9 +54,10 @@ func (client *rpcClient) Search(request SearchRequest) (*SearchResponse, error) 
 
 func (client *rpcClient) GetRepo(key string) (*map[string]*Repo, error) {
 	repos := make(map[string]*Repo)
-	err := client.Call("Afind.GetRepo", key, &repos)
+	rpcCall := client.Go("Afind.GetRepo", key, &repos, nil)
+	call := <-rpcCall.Done
 	client.stats.callsGetRepo++
-	return &repos, err
+	return call.Reply.(*map[string]*Repo), call.Error
 }
 
 func (client *rpcClient) GetAllRepos() (*map[string]*Repo, error) {
@@ -121,7 +123,10 @@ func (r *Remotes) Register(host, rpcPort string) {
 func (r *Remotes) Get(address string) (*rpcClient, error) {
 	r.RLock()
 	defer r.RUnlock()
-
+	log.Debug("remotes.Get address=%v", address)
+	if address == "" {
+		panic("must provide a non-empty address")
+	}
 	// Search for any endpoint matching the hostname
 	// when no full endpoint address is provided.
 	if !strings.Contains(address, ":") {

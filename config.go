@@ -27,7 +27,8 @@ type Config struct {
 	noindexStr string // regular expression of files not to index
 	noIndexRe  *regexp.Regexp
 
-	DbFile string // If non-empty, the JSON file containing the config backing store
+	DbFile     string // If non-empty, the JSON file containing the config backing store
+	LogVerbose bool   // Whether to log verbosely
 }
 
 const (

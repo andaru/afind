@@ -25,6 +25,7 @@ func setupConfig() *afind.Config {
 		NumShards:       *flagNumShards,
 		DefaultRepoMeta: make(map[string]string),
 		DbFile:          *flagDbFile,
+		LogVerbose:      *flagVerbose,
 	}
 	// Update any default metadata provided at the commandline
 	for k, v := range flagMeta {
@@ -50,9 +51,21 @@ func setupConfig() *afind.Config {
 }
 
 func setupLogging() {
-	logger := logging.NewLogBackend(os.Stderr, "", 0)
-	logging.SetBackend(logger)
-	logging.SetFormatter(logging.GlogFormatter)
+	var level logging.Level
+	if *flagVerbose {
+		level = logging.DEBUG
+	} else {
+		level = logging.INFO
+	}
+
+	leveled := logging.AddModuleLevel(logging.NewLogBackend(os.Stderr, "", 0))
+	leveled.SetLevel(level, "afind")
+	leveled.SetLevel(level, "afindd")
+	logging.SetBackend(leveled)
+	format := logging.MustStringFormatter(
+		"%{color:bold}%{level:.1s}%{time:0102 15:04:05.999999} " +
+			"%{pid} %{shortfunc} %{shortfile}]%{color:reset} %{message}")
+	logging.SetFormatter(format)
 }
 
 var af *afind.System
