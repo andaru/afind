@@ -12,4 +12,4 @@ before_install:
   - go get code.google.com/p/go.tools/cmd/cover
 
 script:
- - $HOME/gopath/bin/goveralls -repotoken E58ALNT0xWfennrfAgs2Fgkvq1nAR8hD4
+ - $HOME/gopath/bin/goveralls -repotoken E58ALNT0xWfennrfAgs2Fgkvq1nAR8hD4 -- -covermode=count
