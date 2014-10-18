@@ -138,17 +138,6 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	return sr, err
 }
 
-func getmeta(t interface{}) map[string]string {
-	switch t := t.(type) {
-	case *IndexRequest:
-		return t.Meta
-	case *Repo:
-		return t.Meta
-	default:
-		return make(map[string]string)
-	}
-}
-
 func metaRpcAddress(meta map[string]string, defaultPort string) string {
 	port := meta["port.rpc"]
 	if port == "" {
