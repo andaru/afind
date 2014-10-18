@@ -179,8 +179,6 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 	start := time.Now()
 	log.Info("index %v root: %v meta: %v (%d dirs)",
 		request.Key, request.Root, request.Meta, len(request.Dirs))
-	log.Debug("index %v recursive: %v dirs: %v",
-		request.Key, request.Recurse, request.Dirs)
 
 	if request.Meta == nil {
 		request.Meta = make(map[string]string)

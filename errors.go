@@ -101,3 +101,23 @@ func IsNoRpcClientError(e error) bool {
 	}
 	return false
 }
+
+// A timeout occurred
+type TimeoutError struct {
+	what string
+}
+
+func newTimeoutError(what string) *TimeoutError {
+	return &TimeoutError{what: what}
+}
+
+func (e TimeoutError) Error() string {
+	return "timed out " + e.what
+}
+
+func IsTimeoutError(e error) bool {
+	if _, ok := e.(*TimeoutError); ok {
+		return true
+	}
+	return false
+}

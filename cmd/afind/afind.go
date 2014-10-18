@@ -36,6 +36,9 @@ var (
 	flagSetRepos   = flag.NewFlagSet("repos", flag.ExitOnError)
 	flagRepoDelete = flagSetRepos.Bool("D", false,
 		"Delete a single repo if selected")
+	flagVerbose       = flag.Bool("v", false, "Log verbosely")
+	flagTimeoutSearch = flag.Float64("timeout", 30.0,
+		"Set the search timeout in seconds")
 
 	log = logging.MustGetLogger("afind")
 )
@@ -142,8 +145,9 @@ func search(context *ctx, query string) error {
 		CaseSensitive: !*flagSearchInsens,
 		RepoKeys:      flagKeys,
 		Meta:          flagMeta,
+		Timeout:       *flagTimeoutSearch,
 	}
-
+	log.Debug("search request %+v", request)
 	client, err := context.remotes.Get(*flagRpcAddress)
 	if err != nil {
 		return err
@@ -313,18 +317,36 @@ func printMatches(sr *afind.SearchResponse) {
 	}
 }
 
+func setupLogging() {
+	var level logging.Level
+	if *flagVerbose {
+		level = logging.DEBUG
+	} else {
+		level = logging.INFO
+	}
+
+	leveled := logging.AddModuleLevel(logging.NewLogBackend(os.Stderr, "", 0))
+	leveled.SetLevel(level, "afind")
+	leveled.SetLevel(level, "afindd")
+	logging.SetBackend(leveled)
+	format := logging.MustStringFormatter(
+		"%{color:bold}%{level:.1s}%{time:0102 15:04:05.999999} " +
+			"%{pid} %{shortfunc} %{shortfile}]%{color:reset} %{message}")
+	logging.SetFormatter(format)
+}
+
 func main() {
 	flag.Parse()
-	afind.LoggerStderr()
-	logging.SetFormatter(logging.DefaultFormatter)
+	setupLogging()
 
 	if len(flag.Args()) < 1 {
 		flag.Usage()
+		os.Exit(2)
 		return
 	}
 	err := doAfind()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(2)
+		os.Exit(1)
 	}
 }

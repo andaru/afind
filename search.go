@@ -103,7 +103,6 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 		} else if request.Recurse {
 			total++
 			go func(r *Repo, req SearchRequest) {
-				log.Debug("remote r=%#v req=%#v", r, req)
 				req.Recurse = false
 				newSr, _ := s.searchRemote(r, req)
 				ch <- newSr
@@ -111,16 +110,17 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 		}
 	}
 
-	timeout := s.svc.config.TimeoutSearch()
+	timeout := s.svc.config.GetTimeoutSearch()
 	startShardWait := time.Now()
 	totalShards := total
-	log.Debug("search awaiting %d shards", totalShards)
+	log.Debug("search awaiting %d shards (timeout %.1f sec)", totalShards,
+		s.svc.config.TimeoutSearch)
 
 	for total > 0 {
 		select {
 		case <-timeout:
-			log.Debug("search timed out after %v",
-				time.Since(startShardWait))
+			err = newTimeoutError("searching")
+			total = 0
 		case newSr := <-ch:
 			mergeResponse(newSr, sr)
 			total--
@@ -181,6 +181,10 @@ func (s *searcher) searchLocal(repo *Repo, fname string, request SearchRequest) 
 	resp *SearchResponse, err error) {
 
 	g := newGrep(repo, fname)
+	resp, err = g.searchRepo(&request)
+	if err != nil && resp.Errors[repo.Key] == "" {
+		resp.Errors[repo.Key] = err.Error()
+	}
 	return g.searchRepo(&request)
 }
 

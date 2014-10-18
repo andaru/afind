@@ -33,8 +33,10 @@ var (
 		"Number of file shards created per Repo indexing request")
 	flagDbFile = flag.String("dbfile", "",
 		"The Repo persistent storage backing (JSON)")
-	flagVerbose = flag.Bool("v", false, "Log verbosely")
-	flagMeta    = make(afind.FlagSSMap)
+	flagVerbose      = flag.Bool("v", false, "Log verbosely")
+	flagTimeoutIndex = flag.Float64("timeout", 600.0,
+		"Set the default indexing timeout in seconds")
+	flagMeta = make(afind.FlagSSMap)
 )
 
 func usage() {

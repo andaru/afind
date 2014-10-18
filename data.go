@@ -98,6 +98,10 @@ func (rs RepoState) String() string {
 	return "NULL"
 }
 
+func (rs RepoState) MarshalJSON() (b []byte, err error) {
+	return []byte(`"` + rs.String() + `"`), nil
+}
+
 func newRepo(key, uriIndex string, meta map[string]string) *Repo {
 	r := &Repo{
 		Key:       key,
@@ -150,7 +154,8 @@ type IndexRequest struct {
 	Dirs []string          `json:"dirs"` // Sub directories of root to index
 	Meta map[string]string `json:"meta"` // metadata applied to all new repos
 
-	Recurse bool
+	Recurse bool    `json:"-"`       // recursion is controlled locally
+	Timeout float64 `json:"timeout"` // overrides the default request timeout
 }
 
 func (ir *IndexRequest) SetRecursion(rec bool) {
@@ -192,10 +197,14 @@ func newIndexResponse() *IndexResponse {
 	return &IndexResponse{}
 }
 
-// A SearchRequest is the client request struct.
+// A SearchRequest is the search request struct used by the client.
 //
-// If the user supplies one or more RepoKeys, only Repos matching those
-// key(s) are searched. If RepoKeys is empty all Repo are consulted.
+// If the client supplies one or more RepoKeys, only Repos matching
+// those key(s) are searched, as few as zero. If RepoKeys is empty,
+// all Repo are consulted. As each Repo is consulted, if Meta is
+// supplied, each key's value is compared with the repo if it has
+// a matching key. If all the request Meta fields match each repo
+// in that fashion, the repo will be used for the search.
 type SearchRequest struct {
 	Re            string            `json:"re"`
 	PathRe        string            `json:"path_re"`
@@ -203,9 +212,10 @@ type SearchRequest struct {
 	RepoKeys      []string          `json:"repo_keys"`
 	Meta          map[string]string `json:"meta"`
 
-	// Recursive query: set to have afindd make recursive
-	// requests (with this bit not set).
-	Recurse bool
+	// Recursive query: set to have afindd search recursively one hop
+	// Not honoured via JSON (recursion is controlled internally)
+	Recurse bool    `json:"-"`
+	Timeout float64 `json:"timeout"` // overrides the default request timeout
 }
 
 func newSearchRequest(re, pathRe string, cs bool, repoKeys []string) SearchRequest {

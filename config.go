@@ -17,8 +17,9 @@ type Config struct {
 	RpcBind     string
 	NumShards   int // the number of Repo shards to build per index request
 
-	timeoutIndex  int
-	timeoutSearch int
+	// Default index and search timeouts, in seconds
+	TimeoutIndex  float64
+	TimeoutSearch float64
 
 	// default repository metadata
 	// manipulated by e.g., DefaultHost()
@@ -36,18 +37,18 @@ const (
 	defaultTimeoutSearch = 30 * time.Second
 )
 
-func (c *Config) TimeoutIndex() <-chan time.Time {
-	if c.timeoutIndex == 0 {
-		return time.After(defaultTimeoutIndex)
+func (c *Config) GetTimeoutIndex() <-chan time.Time {
+	if c.TimeoutIndex == 0 {
+		c.TimeoutIndex = float64(defaultTimeoutIndex) / float64(time.Second)
 	}
-	return time.After(time.Duration(c.timeoutIndex) * time.Second)
+	return time.After(time.Duration(c.TimeoutIndex) * time.Second)
 }
 
-func (c *Config) TimeoutSearch() <-chan time.Time {
-	if c.timeoutSearch == 0 {
-		return time.After(defaultTimeoutSearch)
+func (c *Config) GetTimeoutSearch() <-chan time.Time {
+	if c.TimeoutSearch == 0 {
+		c.TimeoutSearch = float64(defaultTimeoutSearch) / float64(time.Second)
 	}
-	return time.After(time.Duration(c.timeoutSearch) * time.Second)
+	return time.After(time.Duration(c.TimeoutSearch) * time.Second)
 }
 
 func (c *Config) DefaultPort() {
