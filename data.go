@@ -158,10 +158,6 @@ type IndexRequest struct {
 	Timeout float64 `json:"timeout"` // overrides the default request timeout
 }
 
-func (ir *IndexRequest) SetRecursion(rec bool) {
-	ir.Recurse = rec
-}
-
 // The response to index calls. Contains details about the Repo
 // indexed on the 'host' indicated in Repo.Meta
 type IndexResponse struct {
@@ -206,11 +202,11 @@ func newIndexResponse() *IndexResponse {
 // a matching key. If all the request Meta fields match each repo
 // in that fashion, the repo will be used for the search.
 type SearchRequest struct {
-	Re            string            `json:"re"`
-	PathRe        string            `json:"path_re"`
-	CaseSensitive bool              `json:"cs"`
-	RepoKeys      []string          `json:"repo_keys"`
-	Meta          map[string]string `json:"meta"`
+	Re            string            `json:"re"`        // search regexp
+	PathRe        string            `json:"path_re"`   // pathname regexp
+	CaseSensitive bool              `json:"cs"`        // true=case-sensitive
+	RepoKeys      []string          `json:"repo_keys"` // repos to search
+	Meta          map[string]string `json:"meta"`      // repo metadata to match
 
 	// Recursive query: set to have afindd search recursively one hop
 	// Not honoured via JSON (recursion is controlled internally)

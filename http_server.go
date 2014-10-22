@@ -111,7 +111,7 @@ func (ws *webService) PostRepo(
 	}
 
 	// Generate the index
-	ir.SetRecursion(true)
+	ir.Recurse = true
 	indexResponse, err := ws.Indexer.Index(ir)
 	if err == nil {
 		rw.WriteHeader(200)
