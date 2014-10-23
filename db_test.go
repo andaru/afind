@@ -1,6 +1,7 @@
 package afind
 
 import (
+	"os"
 	"testing"
 )
 
@@ -81,5 +82,36 @@ func TestDbSize(t *testing.T) {
 	}
 	if s := d.Size(); s != 3 {
 		t.Error("got", s, "repos, want 3")
+	}
+}
+
+func TestBackedDb(t *testing.T) {
+	fn := "./testdata/backed.json"
+	d := newDbWithJsonBacking(fn)
+	defer os.Remove(fn)
+
+	d.Set("1", &Repo{Key: "1"})
+	fi, err := os.Stat(fn)
+	if err != nil {
+		t.Error("unexpected error:", err.Error())
+	}
+	if fi.Size() < 100 {
+		t.Error("size of", fn, "was < 100 bytes, want more")
+	}
+
+	// Now cause the database to be re-read from disk and confirm
+	// the value still exists within.
+	d2 := newDbWithJsonBacking(fn)
+	v := d2.Get("1")
+	if value, ok := v.(*Repo); !ok {
+		t.Logf("%#v", v)
+		t.Error("want a *Repo, got something else")
+	} else {
+		if value.Key != "1" {
+			t.Error("want key=='1', got", value.Key)
+		}
+	}
+	if err := d2.close(); err != nil {
+		t.Error("unexpected error on close():", err.Error())
 	}
 }

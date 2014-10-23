@@ -145,10 +145,6 @@ func (d *db) ForEach(f iterFunc) {
 	}
 }
 
-func NewEmptyDb() *db {
-	return newDb()
-}
-
 func newDb() *db {
 	return &db{&sync.RWMutex{}, make(map[string]*Repo), "", nil}
 }
@@ -170,7 +166,7 @@ func newDbWithJsonBacking(filename string) *db {
 		log.Info("Loaded database %s (%d repos; %s data/%s index)",
 			filename, len(newDb.R), sizeData, sizeIndex)
 	} else {
-		log.Info("Starting with fresh backing store")
+		log.Info("Starting with fresh backing store (due to: %v)", err)
 	}
 	return newDb
 }

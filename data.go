@@ -98,6 +98,22 @@ func (rs RepoState) String() string {
 	return "NULL"
 }
 
+func (rs RepoState) UnmarshalJSON(b []byte) (err error) {
+	switch string(b) {
+	case "NULL":
+		rs = NULL
+	case "OK":
+		rs = OK
+	case "INDEXING":
+		rs = INDEXING
+	case "ERROR":
+		rs = ERROR
+	default:
+		err = newValueError("state", "unknown state '"+string(b)+"'")
+	}
+	return err
+}
+
 func (rs RepoState) MarshalJSON() (b []byte, err error) {
 	return []byte(`"` + rs.String() + `"`), nil
 }
