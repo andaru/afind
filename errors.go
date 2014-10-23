@@ -6,21 +6,21 @@ import (
 
 // Error types
 
-// Index is already available
-type IndexAvailableError struct {
+// Repo is already available and cannot be replaced
+type RepoExistsError struct {
 	key string
 }
 
-func newIndexAvailableError(key string) *IndexAvailableError {
-	return &IndexAvailableError{key: key}
+func newRepoExistsError(key string) *RepoExistsError {
+	return &RepoExistsError{key: key}
 }
 
-func (e *IndexAvailableError) Error() string {
+func (e *RepoExistsError) Error() string {
 	return "Cannot replace existing repository with key '" + e.key + "'"
 }
 
-func IsIndexAvailableError(e error) bool {
-	if _, ok := e.(*IndexAvailableError); ok {
+func IsRepoExistsError(e error) bool {
+	if _, ok := e.(*RepoExistsError); ok {
 		return true
 	}
 	return false
@@ -37,8 +37,7 @@ func newValueError(arg, msg string) *ValueError {
 }
 
 func (e ValueError) Error() string {
-	return fmt.Sprintf(`Value for argument '%s' is invalid: %s`,
-		e.arg, e.msg)
+	return fmt.Sprintf("Argument '%s' value is invalid: %s", e.arg, e.msg)
 }
 
 func IsValueError(e error) bool {
@@ -56,29 +55,11 @@ func newNoRepoFoundError() *NoRepoFoundError {
 }
 
 func (e NoRepoFoundError) Error() string {
-	return "No such repository"
+	return "No Repo found"
 }
 
 func IsNoRepoFoundError(e error) bool {
 	if _, ok := e.(*NoRepoFoundError); ok {
-		return true
-	}
-	return false
-}
-
-// No repositories were available to search in
-type NoRepoAvailableError struct{}
-
-func newNoRepoAvailableError() *NoRepoAvailableError {
-	return &NoRepoAvailableError{}
-}
-
-func (e NoRepoAvailableError) Error() string {
-	return "No repositories available"
-}
-
-func IsNoRepoAvailableError(e error) bool {
-	if _, ok := e.(*NoRepoAvailableError); ok {
 		return true
 	}
 	return false
@@ -112,7 +93,10 @@ func newTimeoutError(what string) *TimeoutError {
 }
 
 func (e TimeoutError) Error() string {
-	return "timed out " + e.what
+	if e.what != "" {
+		return e.what + " timed out"
+	}
+	return "timed out"
 }
 
 func IsTimeoutError(e error) bool {
@@ -120,4 +104,32 @@ func IsTimeoutError(e error) bool {
 		return true
 	}
 	return false
+}
+
+// HTTP error representations for JSON/rest interface
+
+type ErrorHttp struct {
+	Type    string `json:"type,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+func (e ErrorHttp) Error() string {
+	return e.Type + ": " + e.Message
+}
+
+func newErrorHttp(e error) *ErrorHttp {
+	switch e.(type) {
+	default:
+		return &ErrorHttp{Type: "unexpected", Message: e.Error()}
+	case *TimeoutError:
+		return &ErrorHttp{Type: "timeout", Message: e.Error()}
+	case *NoRpcClientError:
+		return &ErrorHttp{Type: "rpc_client_unavailable", Message: e.Error()}
+	case *NoRepoFoundError:
+		return &ErrorHttp{Type: "no_repo_found", Message: e.Error()}
+	case *RepoExistsError:
+		return &ErrorHttp{Type: "repo_exists", Message: e.Error()}
+	case *ValueError:
+		return &ErrorHttp{Type: "value_error", Message: e.Error()}
+	}
 }

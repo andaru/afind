@@ -31,7 +31,7 @@ func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
 		err = newValueError(
 			"Root", "Root must be an absolute path")
 	} else if repos.Get(request.Key) != nil {
-		err = newIndexAvailableError(request.Key)
+		err = newRepoExistsError(request.Key)
 	}
 	return err
 }

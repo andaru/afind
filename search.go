@@ -81,7 +81,7 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 
 	// Finally, error out if there's no available Repos to search
 	if len(repos) == 0 {
-		return nil, newNoRepoAvailableError()
+		return nil, newNoRepoFoundError()
 	}
 
 	// Search repos concurrently

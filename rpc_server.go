@@ -19,7 +19,6 @@ func (rs *rpcService) Search(req SearchRequest, resp *SearchResponse) error {
 
 func (rs *rpcService) Index(req IndexRequest, response *IndexResponse) error {
 	start := time.Now()
-	log.Debug("rpc.Index request=%+v", req)
 	ir, err := rs.Indexer.Index(req)
 	if err != nil {
 		return err
@@ -57,9 +56,8 @@ func (rs *rpcService) GetAllRepos(_ struct{}, response *map[string]*Repo) error 
 	rs.repos.ForEach(func(key string, value interface{}) bool {
 		if v, ok := value.(*Repo); ok {
 			repos[key] = v
-			return true
 		}
-		return false
+		return true
 	})
 	*response = repos
 	return nil

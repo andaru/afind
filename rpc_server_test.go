@@ -219,8 +219,8 @@ func TestRpcSearch(t *testing.T) {
 	}
 }
 
-// Test Index and GetRepo (includes SetRepo calls from Index)
-func TestGetAllRepos(t *testing.T) {
+// Test Index, GetRepo and GetAllRepos (includes SetRepo calls from Index)
+func TestGetAndGetAllRepos(t *testing.T) {
 	cfg := cfgRpcTest()
 	defer endRpcTest(&cfg)
 
@@ -255,6 +255,25 @@ func TestGetAllRepos(t *testing.T) {
 	}
 
 	var repos map[string]*Repo
+
+	// First try getting just one Repo
+	err = rpcsvc.GetRepo("key3", &repos)
+	if err != nil {
+		t.Error("unexpected error:", err.Error())
+	}
+	if len(repos) != 1 {
+		t.Error("got", len(repos), "repos, want 1")
+	}
+	// Then two, via GetRepos
+	err = rpcsvc.GetRepos([]string{"key1", "key2"}, &repos)
+	if err != nil {
+		t.Error("unexpected error:", err.Error())
+	}
+	if len(repos) != 2 {
+		t.Error("got", len(repos), "repos, want 2")
+	}
+
+	// And finally all
 	err = rpcsvc.GetAllRepos(struct{}{}, &repos)
 	if len(repos) != 3 {
 		t.Error("got", len(repos), "repos, want 3")
