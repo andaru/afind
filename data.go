@@ -175,16 +175,6 @@ func newIndexRequest(key, root string, dirs []string) IndexRequest {
 	return ir
 }
 
-func newIndexRequestWithMeta(key, root string, dirs []string,
-	meta map[string]string) IndexRequest {
-
-	ir := newIndexRequest(key, root, dirs)
-	for k, v := range meta {
-		ir.Meta[k] = v
-	}
-	return ir
-}
-
 func newIndexResponse() *IndexResponse {
 	return &IndexResponse{}
 }
