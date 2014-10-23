@@ -108,28 +108,28 @@ func IsTimeoutError(e error) bool {
 
 // HTTP error representations for JSON/rest interface
 
-type ErrorHttp struct {
+type ErrorService struct {
 	Type    string `json:"type,omitempty"`
 	Message string `json:"message,omitempty"`
 }
 
-func (e ErrorHttp) Error() string {
+func (e ErrorService) Error() string {
 	return e.Type + ": " + e.Message
 }
 
-func newErrorHttp(e error) *ErrorHttp {
+func newErrorService(e error) *ErrorService {
 	switch e.(type) {
 	default:
-		return &ErrorHttp{Type: "unexpected", Message: e.Error()}
+		return &ErrorService{Type: "unexpected", Message: e.Error()}
 	case *TimeoutError:
-		return &ErrorHttp{Type: "timeout", Message: e.Error()}
+		return &ErrorService{Type: "timeout", Message: e.Error()}
 	case *NoRpcClientError:
-		return &ErrorHttp{Type: "rpc_client_unavailable", Message: e.Error()}
+		return &ErrorService{Type: "rpc_client_unavailable", Message: e.Error()}
 	case *NoRepoFoundError:
-		return &ErrorHttp{Type: "no_repo_found", Message: e.Error()}
+		return &ErrorService{Type: "no_repo_found", Message: e.Error()}
 	case *RepoExistsError:
-		return &ErrorHttp{Type: "repo_exists", Message: e.Error()}
+		return &ErrorService{Type: "repo_exists", Message: e.Error()}
 	case *ValueError:
-		return &ErrorHttp{Type: "value_error", Message: e.Error()}
+		return &ErrorService{Type: "value_error", Message: e.Error()}
 	}
 }

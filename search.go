@@ -23,21 +23,18 @@ func newSearcher(svc Service) searcher {
 }
 
 func mergeResponse(in *SearchResponse, out *SearchResponse) {
-	var nummatch int64
-
 	for file, rmatches := range in.Files {
 		if _, ok := out.Files[file]; !ok {
 			out.Files[file] = make(map[string]map[string]string)
 		}
 		for repo, matches := range rmatches {
-			nummatch += int64(len(matches))
 			out.Files[file][repo] = matches
 		}
 	}
 	for k, v := range in.Errors {
 		out.Errors[k] = v
 	}
-	out.NumLinesMatched += nummatch
+	out.NumLinesMatched += in.NumLinesMatched
 }
 
 func repoMetaMatchesSearch(repo *Repo, request *SearchRequest) bool {
@@ -112,8 +109,8 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 
 	timeout := s.svc.config.GetTimeoutSearch()
 	startShardWait := time.Now()
-	totalShards := total
-	log.Debug("search awaiting %d shards (timeout %.1f sec)", totalShards,
+	totalReq := total
+	log.Debug("search awaiting %d total requests (timeout %.1f sec)", totalReq,
 		s.svc.config.TimeoutSearch)
 
 	for total > 0 {
@@ -128,8 +125,8 @@ func (s searcher) Search(request SearchRequest) (*SearchResponse, error) {
 	}
 
 	if total == 0 {
-		log.Debug("search %d shards returned in %v",
-			totalShards, time.Since(startShardWait))
+		log.Debug("search %d requests completed in %v",
+			totalReq, time.Since(startShardWait))
 	}
 	sr.Elapsed = time.Since(start)
 	log.Info("search [%v] path: [%v] complete in %v (%d/%d matches/repos)",
@@ -174,7 +171,7 @@ func (s *searcher) searchLocal(repo *Repo, fname string, request SearchRequest) 
 	if err != nil && resp.Errors[repo.Key] == "" {
 		resp.Errors[repo.Key] = err.Error()
 	}
-	return g.searchRepo(&request)
+	return resp, err
 }
 
 func (s *searcher) searchRemote(repo *Repo, request SearchRequest) (
@@ -295,8 +292,8 @@ func (s *grep) searchRepo(request *SearchRequest) (
 		resp.Files[name][s.repo.Key] = matches
 		resp.NumLinesMatched = int64(numlines)
 	}
-	log.Debug("search shard matched %d lines in %d files",
-		resp.NumLinesMatched, len(resp.Files))
+	log.Debug("search shard %v matched %d lines in %d files",
+		s.filename, resp.NumLinesMatched, len(resp.Files))
 	return
 }
 
@@ -342,6 +339,7 @@ func (s *grep) reader(r io.Reader, name string) (
 		err       error
 		buf       = s.buf[:0]
 		lineno    = 1
+		nmatches  = 0
 		beginText = true
 		endText   = false
 		matches   = make(map[string]string)
@@ -375,6 +373,7 @@ func (s *grep) reader(r io.Reader, name string) (
 			lineno += countNL(buf[chunkStart:lineStart])
 			if lineStart != lineEnd {
 				matches[strconv.Itoa(lineno)] = string(buf[lineStart:lineEnd])
+				nmatches++
 			}
 			lineno++
 			chunkStart = lineEnd
@@ -395,8 +394,5 @@ func (s *grep) reader(r io.Reader, name string) (
 	if err != nil {
 		return 0, nil, err
 	}
-	if lineno > 0 {
-		lineno--
-	}
-	return lineno, matches, err
+	return nmatches, matches, err
 }

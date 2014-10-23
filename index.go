@@ -55,10 +55,10 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	resp.Repo = &repo
 	repo.IndexPath = i.indexPathPrefix(&request)
 
-	// Always create at least one shard
+	// By default, use 2 shards (in e.g., tests)
 	numShards := i.svc.config.NumShards
-	if numShards < 1 {
-		numShards = 1
+	if numShards == 0 {
+		numShards = 2
 	}
 
 	shards := make([]*index.IndexWriter, numShards)
@@ -204,9 +204,6 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 		}
 	}
 	log.Debug("index %v completed in %v", request.Key, time.Since(start))
-	if err != nil {
-		log.Error(err.Error())
-	}
 	return
 }
 

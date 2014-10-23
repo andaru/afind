@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func TestErrorHttpType(t *testing.T) {
+func TestErrorServiceType(t *testing.T) {
 	check := func(e error, expType string) {
-		err := newErrorHttp(e)
+		err := newErrorService(e)
 		if err.Type != expType {
 			t.Errorf("got error type %v, want %v", err.Type, expType)
 		}
@@ -24,7 +24,7 @@ func TestErrorHttpType(t *testing.T) {
 
 func TestErrorString(t *testing.T) {
 	check := func(e error, substr string) {
-		err := newErrorHttp(e)
+		err := newErrorService(e)
 		if !strings.Contains(err.Error(), substr) {
 			t.Errorf("want substring %v, got string %v",
 				substr, err.Error())
