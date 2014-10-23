@@ -162,10 +162,14 @@ func TestReindexFailure(t *testing.T) {
 	}
 	ir := newIndexRequest(key, path.Join(cwd, "./testdata/repo1/"),
 		[]string{"dir1"})
+	ir.Meta["test"] = "ir"
+
 	// even with different data, we can't index this again unless
 	// the first one failed.
 	ir2 := newIndexRequest(key, path.Join(cwd, "./testdata/repo1/"),
 		[]string{"dir2"})
+	ir.Meta["test"] = "ir2"
+
 	resp := newIndexResponse()
 	resp2 := newIndexResponse()
 	err = rpcsvc.Index(ir, resp)
@@ -176,8 +180,8 @@ func TestReindexFailure(t *testing.T) {
 	if err == nil {
 		t.Error("expected an error")
 	}
-	if !strings.Contains(err.Error(), "Cannot replace existing") {
-		t.Error("error message [", err.Error(), "] was unexpected")
+	if !IsRepoExistsError(err) {
+		t.Errorf("wanted RepoExistsError, got %#v", err)
 	}
 	endRpcTest(&cfg)
 }
