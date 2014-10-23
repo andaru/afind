@@ -120,10 +120,6 @@ func newRepoFromIndexRequest(request *IndexRequest) Repo {
 	return *repo
 }
 
-func newEmptyRepo() *Repo {
-	return &Repo{Meta: make(map[string]string)}
-}
-
 // A Searcher defines the front-end search interface.
 //
 // A Search() is executed without any Repos being selected by
