@@ -173,9 +173,9 @@ type IndexRequest struct {
 // The response to index calls. Contains details about the Repo
 // indexed on the 'host' indicated in Repo.Meta
 type IndexResponse struct {
-	Repo    *Repo `json:"repo"`
-	Elapsed time.Duration
-	Error   string
+	Repo    *Repo         `json:"repo"`
+	Elapsed time.Duration `json:"elapsed_index"`
+	Error   ErrorService  `json:"error,omitempty"`
 }
 
 func newIndexRequest(key, root string, dirs []string) IndexRequest {

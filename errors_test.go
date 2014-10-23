@@ -19,7 +19,7 @@ func TestErrorServiceType(t *testing.T) {
 	check(newNoRpcClientError(), "rpc_client_unavailable")
 	check(newRepoExistsError("repo_key"), "repo_exists")
 	check(newValueError("argument", "msg"), "value_error")
-	check(errors.New("yeehaw"), "unexpected")
+	check(errors.New("yeehaw"), "other")
 }
 
 func TestErrorString(t *testing.T) {
@@ -33,6 +33,7 @@ func TestErrorString(t *testing.T) {
 	check(newNoRepoFoundError(), "no_repo_found: No Repo found")
 	check(newValueError("argument", "msg"),
 		"value_error: Argument 'argument' value is invalid: msg")
+	check(errors.New("foo"), "other: foo")
 }
 
 func TestErrorIs(t *testing.T) {

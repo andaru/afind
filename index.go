@@ -21,19 +21,15 @@ func newIndexer(svc Service) indexer {
 }
 
 func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
-	var err error
-
 	if len(request.Dirs) == 0 {
-		err = newValueError(
+		return newValueError(
 			"dirs",
 			"Requires at least one sub dir of Root, such as '.'")
 	} else if !path.IsAbs(request.Root) {
-		err = newValueError(
+		return newValueError(
 			"root", "Root must be an absolute path")
-	} else if repos.Get(request.Key) != nil {
-		err = newRepoExistsError(request.Key)
 	}
-	return err
+	return nil
 }
 
 func (i indexer) indexPathPrefix(request *IndexRequest) string {
@@ -44,13 +40,22 @@ func (i indexer) indexPathPrefix(request *IndexRequest) string {
 }
 
 func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err error) {
+	resp = newIndexResponse()
+
 	start := time.Now()
 	if err := validateIndexRequest(&request, i.repos); err != nil {
 		log.Debug("index %v failed: %v", request.Key, err)
 		return nil, err
 	}
-
-	resp = newIndexResponse()
+	if r := i.repos.Get(request.Key); r != nil {
+		err = newRepoExistsError(request.Key)
+		if err != nil {
+			es := newErrorService(err)
+			resp.Error = *es
+		}
+		resp.Repo = r.(*Repo)
+		return
+	}
 	repo := newRepoFromIndexRequest(&request)
 	resp.Repo = &repo
 	repo.IndexPath = i.indexPathPrefix(&request)
@@ -154,7 +159,8 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 	resp.Elapsed = time.Since(start)
 	if err != nil {
 		repo.State = ERROR
-		resp.Error = err.Error()
+		es := newErrorService(err)
+		resp.Error = *es
 	} else {
 		repo.State = OK
 	}
@@ -176,7 +182,6 @@ func (i indexer) indexRemote(request IndexRequest) (resp *IndexResponse, err err
 }
 
 func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
-	start := time.Now()
 	log.Info("index %v root: %v meta: %v (%d dirs)",
 		request.Key, request.Root, request.Meta, len(request.Dirs))
 
@@ -190,17 +195,46 @@ func (i indexer) Index(request IndexRequest) (resp *IndexResponse, err error) {
 		}
 	}
 
+	// Wrap indexing in a goroutine to allow for a timeout
+	log.Debug("index %v awaiting response", request.Key)
+	ch := make(chan *IndexResponse, 1)
+	go func(r *IndexRequest) {
+		gresp, gerr := i.indexLocalOrRemote(r)
+		err = gerr
+		ch <- gresp
+	}(&request)
+	select {
+	case resp = <-ch: // and we're done!
+	case <-i.svc.config.GetTimeoutIndex():
+		log.Error("index %v timed out", request.Key)
+	}
+	return
+}
+
+func (i indexer) indexLocalOrRemote(request *IndexRequest) (
+	resp *IndexResponse, err error) {
+
+	resp = newIndexResponse()
+	start := time.Now()
 	// Go local or proxy to a remote afindd
-	if i.isIndexLocal(&request) {
-		resp, err = i.indexLocal(request)
+	if i.isIndexLocal(request) {
+		resp, err = i.indexLocal(*request)
 	} else if request.Recurse {
 		request.Recurse = false
-		resp, err = i.indexRemote(request)
+		resp, err = i.indexRemote(*request)
+		if IsRepoExistsError(err) && resp != nil {
+			// allow a response from the backend
+			// to fill our repos cache when the
+			// error is because the repo exists on
+			// the backend.
+			err = nil
+		}
 	}
-	if err == nil && resp != nil && resp.Repo != nil {
-		if e := i.repos.Set(resp.Repo.Key, resp.Repo); e != nil {
-			log.Critical("error setting key %s: %v",
-				resp.Repo.Key, e.Error())
+	if err == nil && resp.Repo != nil {
+		repo := resp.Repo
+		log.Debug("repo set %v", repo.Key)
+		if e := i.repos.Set(repo.Key, repo); e != nil {
+			log.Critical("error setting key %s: %v", repo.Key, e.Error())
 		}
 	}
 	log.Debug("index %v completed in %v", request.Key, time.Since(start))

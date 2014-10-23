@@ -93,10 +93,11 @@ func newTimeoutError(what string) *TimeoutError {
 }
 
 func (e TimeoutError) Error() string {
+	s := "timed out"
 	if e.what != "" {
-		return e.what + " timed out"
+		s += " waiting for " + e.what
 	}
-	return "timed out"
+	return s
 }
 
 func IsTimeoutError(e error) bool {
@@ -114,13 +115,23 @@ type ErrorService struct {
 }
 
 func (e ErrorService) Error() string {
-	return e.Type + ": " + e.Message
+	s := ""
+	if e.Type != "" {
+		s += e.Type
+	}
+	if e.Message != "" {
+		if s != "" {
+			s += ": "
+		}
+		s += e.Message
+	}
+	return s
 }
 
 func newErrorService(e error) *ErrorService {
 	switch e.(type) {
 	default:
-		return &ErrorService{Type: "unexpected", Message: e.Error()}
+		return &ErrorService{Type: "other", Message: e.Error()}
 	case *TimeoutError:
 		return &ErrorService{Type: "timeout", Message: e.Error()}
 	case *NoRpcClientError:
