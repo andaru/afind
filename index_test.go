@@ -95,3 +95,24 @@ func TestIndex(t *testing.T) {
 		t.Error("Didn't get meta back")
 	}
 }
+
+func TestValidateIndexRequest(t *testing.T) {
+	ir := newIndexRequest("key1", "root", []string{})
+	db := newDb()
+	err := validateIndexRequest(&ir, db)
+	if !IsValueError(err) {
+		t.Errorf("expected a valueerror, got %v", err)
+	}
+	if err.(*ValueError).arg != "dirs" {
+		t.Errorf("want 'dirs', got %v", err.(*ValueError).arg)
+	}
+
+	ir = newIndexRequest("key1", "./root", []string{"dir1"})
+	err = validateIndexRequest(&ir, db)
+	if !IsValueError(err) {
+		t.Errorf("expected a valueerror, got %v", err)
+	}
+	if err.(*ValueError).arg != "root" {
+		t.Errorf("want 'root', got %v", err.(*ValueError).arg)
+	}
+}

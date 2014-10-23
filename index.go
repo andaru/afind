@@ -25,11 +25,11 @@ func validateIndexRequest(request *IndexRequest, repos KeyValueStorer) error {
 
 	if len(request.Dirs) == 0 {
 		err = newValueError(
-			"Dirs",
+			"dirs",
 			"Requires at least one sub dir of Root, such as '.'")
 	} else if !path.IsAbs(request.Root) {
 		err = newValueError(
-			"Root", "Root must be an absolute path")
+			"root", "Root must be an absolute path")
 	} else if repos.Get(request.Key) != nil {
 		err = newRepoExistsError(request.Key)
 	}
@@ -79,7 +79,7 @@ func (i indexer) indexLocal(request IndexRequest) (resp *IndexResponse, err erro
 
 	if len(paths) == 0 {
 		return nil, newValueError(
-			"Dirs", "No valid paths found")
+			"dirs", "No directories available")
 	}
 
 	// Walk the paths, adding one to each shard round robin

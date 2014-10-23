@@ -13,6 +13,7 @@ func TestErrorHttpType(t *testing.T) {
 			t.Errorf("got error type %v, want %v", err.Type, expType)
 		}
 	}
+	check(newTimeoutError("thing"), "timeout")
 	check(newTimeoutError(""), "timeout")
 	check(newNoRepoFoundError(), "no_repo_found")
 	check(newNoRpcClientError(), "rpc_client_unavailable")
