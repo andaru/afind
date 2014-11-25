@@ -58,7 +58,7 @@ func (s *reposServer) GetAll(args struct{}, reply *map[string]*afind.Repo) error
 	return nil
 }
 
-func (s *reposServer) Delete(args string, _ interface{}) error {
+func (s *reposServer) Delete(args string, _ *interface{}) error {
 	return s.repos.Delete(args)
 }
 
