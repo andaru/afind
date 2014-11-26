@@ -150,7 +150,6 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	}
 
 	indexroot := getroot(i.cfg, &req)
-	log.Info("writing indices to %v", indexroot)
 	if err = makeIndexRoot(indexroot); err != nil && !os.IsExist(err) {
 		return
 	}
@@ -174,8 +173,18 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 
 	// For each provided subdir, walk the contents in series for now
 	for _, path := range req.Dirs {
+		// check to see if the context's timeout has elapsed
+		select {
+		case <-ctx.Done():
+			// set the timeout error and stop working
+			resp.SetError(errs.NewTimeoutError("index"))
+			return
+		default:
+			// pass through if not done
+		}
+
 		path = filepath.Join(req.Root, path)
-		log.Debug("walking input path %v", path)
+		log.Debug("walking subdir %v", path)
 		err = filepath.Walk(path,
 			func(p string, info os.FileInfo, werr error) error {
 				// Track the last walk error if set, then bail
@@ -219,14 +228,11 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 		repo.SizeIndex += ByteSize(shard.IndexBytes())
 	}
 	repo.ElapsedIndexing = time.Since(start)
+	repo.TimeCreated = time.Now().UTC()
 
 	// store the repo in the database if there was no error
 	if err == nil {
-		if seterr := i.repos.Set(repo.Key, repo); seterr != nil {
-			log.Critical("failed to store repo [%v] after indexing",
-				req.Key)
-			err = seterr
-		}
+		err = i.repos.Set(repo.Key, repo)
 	}
 
 	var msg string
@@ -239,7 +245,6 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 		msg = "suceeded"
 	}
 	log.Info("index backend [%v] %v [%v]", req.Key, msg, repo.ElapsedIndexing)
-
 	return
 }
 
