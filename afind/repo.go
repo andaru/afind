@@ -22,8 +22,8 @@ const (
 type Repo struct {
 	Key       string `json:"key"`        // Unique key
 	IndexPath string `json:"index_path"` // Path to the .afindex index files
-	Root      string `json:"root"`       // Root path (under which Dirs are rooted)
-	Meta      Meta   `json:"meta"`       // User configurable metadata for this Repo
+	Root      string `json:"root"`       // Root path
+	Meta      Meta   `json:"meta"`       // Metadata for this Repo
 	State     string `json:"state"`      // Current repository indexing state
 
 	// Metadata produced during indexing
@@ -39,7 +39,7 @@ type Repo struct {
 	ElapsedIndexing time.Duration `json:"elapsed"`
 
 	// When the repo was created (indexed)
-	TimeCreated time.Time
+	TimeCreated time.Time `json:"time_created"`
 }
 
 func (r *Repo) SetMeta(defaults Meta, replace Meta) {
