@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/rpc"
 	"time"
@@ -119,6 +120,7 @@ func timeoutIndex(req afind.IndexQuery, cfg *afind.Config) time.Duration {
 func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 	resp *afind.IndexResult, err error) {
 
+	log.Debug("index request %+v", req)
 	resp = afind.NewIndexResult()
 	// Return the existing repo if it already exists
 	if r := s.repos.Get(req.Key); r != nil {
@@ -145,6 +147,9 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 		err = par.Requests(reqch).DoWithContext(ctx)
 		close(ch)
 		resp = <-ch
+		if resp.Error != "" {
+			err = errors.New(resp.Error)
+		}
 	} else {
 		// neither a local query or a recursive query,
 		// so this presumably once recursive query

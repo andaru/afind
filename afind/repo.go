@@ -37,6 +37,9 @@ type Repo struct {
 
 	// The time spent producing the indices for this repo
 	ElapsedIndexing time.Duration `json:"elapsed"`
+
+	// When the repo was created (indexed)
+	TimeCreated time.Time
 }
 
 func (r *Repo) SetMeta(defaults Meta, replace Meta) {
