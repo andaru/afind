@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"net/rpc"
@@ -161,24 +162,30 @@ func search(c *ctx, query string) error {
 	}
 	request.Recurse = true
 	sr, err := c.searcher.Search(context.Background(), request)
-	if err == nil {
+	if err == nil && sr.Error == "" {
 		printMatches(sr)
+	}
+	if sr.Error != "" {
+		err = errors.New(sr.Error)
 	}
 	return err
 }
 
 func index(c *ctx, key, root string, subdirs []string) error {
 	request := afind.IndexQuery{
-		Key:  key,
-		Root: root,
-		Dirs: subdirs,
-		Meta: afind.Meta(flagMeta),
+		Key:     key,
+		Root:    root,
+		Dirs:    subdirs,
+		Meta:    afind.Meta(flagMeta),
+		Recurse: true,
 	}
 	ir, err := c.indexer.Index(context.Background(), request)
-	if err == nil {
-		fmt.Printf("indexed [%v] %d files [meta %v] %v\n",
-			ir.Repo.Key, ir.Repo.NumFiles,
-			ir.Repo.Meta, ir.Repo.ElapsedIndexing)
+	if ir.Repo != nil {
+		fmt.Printf("index [%s] done in %v\n",
+			ir.Repo.Key, ir.Repo.ElapsedIndexing)
+	}
+	if ir.Error != "" {
+		err = errors.New(ir.Error)
 	}
 	return err
 }
@@ -191,13 +198,15 @@ func repoAsString(r *afind.Repo) string {
 	}
 	meta = meta[:len(meta)-2] + "}"
 
-	return (fmt.Sprintf("repo key: %s (state: %s)\n", r.Key, r.State) +
-		fmt.Sprintf("  root path  : %v\n", r.Root) +
-		fmt.Sprintf("  data size  : %s\n", r.SizeData) +
-		fmt.Sprintf("  index size : %s\n", r.SizeIndex) +
-		fmt.Sprintf("  total files: %d\n", r.NumFiles) +
-		fmt.Sprintf("  total dirs : %d\n", r.NumDirs) +
-		fmt.Sprintf("  metadata   : %v\n", meta))
+	return (fmt.Sprintf("repo: %s [%s]\n", r.Key, r.State) +
+		fmt.Sprintf("  indexed:    %v (in %v)\n",
+			r.TimeCreated, r.ElapsedIndexing) +
+		fmt.Sprintf("  state:      %s\n", r.State) +
+		fmt.Sprintf("  root path:  %v\n", r.Root) +
+		fmt.Sprintf("  data size:  %s\n", r.SizeData) +
+		fmt.Sprintf("  index size: %s\n", r.SizeIndex) +
+		fmt.Sprintf("  files/dirs: %d/%d\n", r.NumFiles, r.NumDirs) +
+		fmt.Sprintf("  metadata:   %v\n", meta))
 }
 
 func repos(c *ctx, key string) error {
