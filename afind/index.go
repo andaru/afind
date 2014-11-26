@@ -230,11 +230,6 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	repo.ElapsedIndexing = time.Since(start)
 	repo.TimeCreated = time.Now().UTC()
 
-	// store the repo in the database if there was no error
-	if err == nil {
-		err = i.repos.Set(repo.Key, repo)
-	}
-
 	var msg string
 	if err != nil {
 		repo.State = ERROR

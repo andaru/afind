@@ -149,6 +149,9 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 		resp = <-ch
 		if resp.Error != "" {
 			err = errors.New(resp.Error)
+		} else if resp.Repo != nil {
+			// update the repo store if the repo is valid
+			err = s.repos.Set(resp.Repo.Key, resp.Repo)
 		}
 	} else {
 		// neither a local query or a recursive query,
