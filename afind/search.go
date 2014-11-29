@@ -158,12 +158,6 @@ type searcher struct {
 	repos KeyValueStorer
 }
 
-// local carries our private Searcher implementation
-type local struct {
-	cfg   *Config
-	repos KeyValueStorer
-}
-
 // Returns a new value of our Searcher implementation
 func NewSearcher(cfg *Config, repos KeyValueStorer) searcher {
 	return searcher{cfg: cfg, repos: repos}
