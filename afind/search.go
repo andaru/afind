@@ -215,7 +215,7 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 				// Maybe mark the repo as errored (unavailable)
 				if os.IsNotExist(err) || os.IsPermission(err) {
 					r.State = ERROR
-					s.repos.Set(r.Key, r)
+					_ = s.repos.Set(r.Key, r)
 				}
 				sr.Error = err.Error()
 			}
