@@ -86,8 +86,8 @@ type SearchResult struct {
 
 	Errors      map[string]string `json:"errors,omitempty"` // Per repo errors
 	Error       string            `json:"error,omitempty"`  // Any global error
-	NumMatches  int64             `json:"num_matches"`      // # search hits
-	Elapsed     time.Duration     `json:"elapsed"`          // Whole search time
+	NumMatches  int64             `json:"num_matches"`      // Search hit count
+	Elapsed     time.Duration     `json:"elapsed_total"`    // Whole search time
 	ElapsedPost time.Duration     `json:"elapsed_posting"`  // Posting query time
 }
 
@@ -130,7 +130,10 @@ func (r *SearchResult) Update(other *SearchResult) {
 	if r.Error == "" {
 		r.Error = other.Error
 	} else {
-		r.Error += "\n" + other.Error
+		// Append unique messages
+		if r.Error != other.Error {
+			r.Error += "\n" + other.Error
+		}
 	}
 	r.NumMatches += other.NumMatches
 	r.Elapsed += other.Elapsed
