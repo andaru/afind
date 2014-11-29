@@ -98,7 +98,7 @@ func (m Meta) SetHost(host string) {
 	m["host"] = host
 }
 
-// Checks whether some other metadata matches this.
+// Matches checks whether some other metadata matches this.
 // Each key in the local object is scanned, and a match occurs either
 // when the key does not exist in the other object, or the key does
 // exist in the other object and the key's value in the local object
@@ -121,9 +121,9 @@ func (m Meta) Update(other Meta) {
 	}
 }
 
-// NewRepoFromQuery is a convenience function to create a new Repo
+// newRepoFromQuery is a convenience function to create a new Repo
 // from the query and the path to write index shards to.
-func NewRepoFromQuery(q *IndexQuery, ixpath string) *Repo {
+func newRepoFromQuery(q *IndexQuery, ixpath string) *Repo {
 	repo := NewRepo()
 	repo.Key = q.Key
 	repo.Root = q.Root

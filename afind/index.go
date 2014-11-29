@@ -154,7 +154,7 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 		return
 	}
 
-	repo := NewRepoFromQuery(&req, indexroot)
+	repo := newRepoFromQuery(&req, indexroot)
 	repo.SetMeta(i.cfg.RepoMeta, req.Meta)
 	resp.Repo = repo
 

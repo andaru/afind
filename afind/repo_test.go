@@ -43,7 +43,7 @@ func TestRepoSetup(t *testing.T) {
 	ir := NewIndexQuery("key", "root", []string{"dir1", "dir2"})
 	ir.Meta["key"] = "value"
 	ir.Meta["host"] = "abc"
-	r2 := NewRepoFromQuery(&ir, "/")
+	r2 := newRepoFromQuery(&ir, "/")
 
 	if r1.Host() != "" || r2.Host() != "abc" {
 		t.Error("Host() had unexpected results; r1=",
