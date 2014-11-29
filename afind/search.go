@@ -1,6 +1,7 @@
 package afind
 
 import (
+	"os"
 	"time"
 
 	"code.google.com/p/go.net/context"
@@ -196,15 +197,28 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	}
 	repo := irepo.(*Repo)
 
+	// If the repo is not ok, it's unavailable, so exit early.
+	if repo.State != OK {
+		return resp, errs.NewNoRepoFoundError()
+	}
+
 	shards := repo.Shards()
 
 	left := len(shards)
 	ch := make(chan *SearchResult, 1)
 	defer close(ch)
 
-	for _, shard := range repo.Shards() {
+	for _, shard := range shards {
 		go func(r *Repo, fname string) {
-			sr, _ := searchLocal(ctx, query, r, fname)
+			sr, err := searchLocal(ctx, query, r, fname)
+			if err != nil {
+				// Maybe mark the repo as errored (unavailable)
+				if os.IsNotExist(err) || os.IsPermission(err) {
+					r.State = ERROR
+					s.repos.Set(r.Key, r)
+				}
+				sr.Error = err.Error()
+			}
 			select {
 			case <-ctx.Done():
 				log.Debug("timed out")

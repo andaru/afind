@@ -54,6 +54,14 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 		}
 	}
 
+	// Check to see if the repo root is still available. If not,
+	// return an error so that the caller can mark the repository
+	// unavailable.
+	if _, err := os.Stat(s.root); err != nil {
+		log.Debug("grepper couldn't stat repo root %s: %v", s.root, err)
+		return resp, err
+	}
+
 	// Attempt to open the index file
 	var ix *index.Index
 	if ix, err = index.Open(s.filename); err != nil {
