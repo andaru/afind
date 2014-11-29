@@ -39,7 +39,7 @@ type Repo struct {
 	ElapsedIndexing time.Duration `json:"elapsed"`
 
 	// When the repo was created (indexed)
-	TimeCreated time.Time
+	TimeCreated time.Time `json:"time_created"`
 }
 
 func (r *Repo) SetMeta(defaults Meta, replace Meta) {
