@@ -4,7 +4,7 @@ import (
 	"os"
 	"time"
 
-	"golang.org/x/net/context"
+	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/errs"
 )
 

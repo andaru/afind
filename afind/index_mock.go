@@ -1,7 +1,7 @@
 package afind
 
 import (
-	"golang.org/x/net/context"
+	"code.google.com/p/go.net/context"
 	"time"
 )
 
