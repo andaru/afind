@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	periodTcpKeepAlive   = 3 * time.Minute
-	defaultTimeoutIndex  = 1800.0
-	defaultTimeoutSearch = 30.0
+	periodTcpKeepAlive    = 3 * time.Minute
+	defaultTimeoutIndex   = 1800.0
+	defaultTimeoutSearch  = 30.0
+	defaultSearchParallel = 8
 )
 
 func init() {
@@ -41,7 +42,7 @@ func getConfig() afind.Config {
 		DbFile:        *flagDbFile,
 		TimeoutIndex:  time.Duration(*flagTimeoutIndex * float64(time.Second)),
 		TimeoutSearch: time.Duration(*flagTimeoutSearch * float64(time.Second)),
-		MaxSearchC:    4, // todo: make a flag
+		MaxSearchC:    *flagSearchPar,
 	}
 	c.SetVerbose(*flagVerbose)
 	c.Host()
@@ -71,6 +72,8 @@ var (
 		"The default indexing timeout, in seconds")
 	flagTimeoutSearch = flag.Float64("timeout_search", defaultTimeoutSearch,
 		"The default search timeout, in seconds")
+	flagSearchPar = flag.Int("num_parallel", defaultSearchParallel,
+		"Maximum concurrent searches operating at any one time")
 	flagMeta = make(flags.SSMap)
 
 	log = utils.LoggerForModuleVerbose("afindd")
