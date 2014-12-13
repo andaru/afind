@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/afind"
 	"github.com/andaru/afind/afind/api"
 	"github.com/andaru/afind/flags"
+	"golang.org/x/net/context"
 )
 
 // This is the afind command-line client

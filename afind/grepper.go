@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"code.google.com/p/go.net/context"
+	"golang.org/x/net/context"
 	"github.com/andaru/afind/errs"
 	"github.com/andaru/codesearch/index"
 	"github.com/andaru/codesearch/regexp"

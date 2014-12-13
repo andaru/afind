@@ -6,7 +6,7 @@ import (
 	"net/rpc"
 	"time"
 
-	"code.google.com/p/go.net/context"
+	"golang.org/x/net/context"
 	"github.com/andaru/afind/afind"
 	"github.com/andaru/afind/errs"
 	"github.com/julienschmidt/httprouter"
@@ -200,12 +200,8 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// Determine which repos to search, then search in parallel
+	// Determine which repos to search, then search concurrently
 	searchRepos := getRepos(s.repos, req)
-	concurrency := len(searchRepos)
-	if concurrency > s.cfg.MaxSearchC {
-		concurrency = s.cfg.MaxSearchC
-	}
 	ch := make(chan *afind.SearchResult, len(searchRepos))
 	reqch := make(chan par.RequestFunc, len(searchRepos))
 	for _, repo := range searchRepos {
@@ -219,14 +215,12 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	}
 	close(reqch)
 
-	err = par.Requests(reqch).WithConcurrency(concurrency).DoWithContext(ctx)
+	err = par.Requests(reqch).WithConcurrency(s.cfg.MaxSearchC).DoWithContext(ctx)
 	close(ch)
 
 	// Merge the incoming results
-	num := 0
 	for in := range ch {
 		resp.Update(in)
-		num++
 	}
 	resp.Elapsed = time.Since(start)
 	return

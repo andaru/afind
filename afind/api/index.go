@@ -7,11 +7,11 @@ import (
 	"net/rpc"
 	"time"
 
-	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/afind"
 	"github.com/andaru/afind/errs"
 	"github.com/julienschmidt/httprouter"
 	"github.com/savaki/par"
+	"golang.org/x/net/context"
 )
 
 type IndexerClient struct {

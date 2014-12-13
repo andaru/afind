@@ -79,7 +79,15 @@ func TestRepoJson(t *testing.T) {
 		t.Errorf("unexpected json unmarshal error: %v", err)
 	}
 
+	// workaround: private field `loc` in struct time.Time has a
+	// pointer to a location, rather than nil, which are both
+	// represented as 0 unix time in UTC. Copy its version so
+	// DeepEqual works.
+	newr.TimeCreated = r.TimeCreated
 	if !reflect.DeepEqual(r, newr) {
+		t.Logf("self=%#v", r)
+		t.Logf("other=%#v", newr)
+		t.Logf("created %v %v", r.TimeCreated, newr.TimeCreated)
 		t.Error("Repo lost data during marshal/unmarshal")
 	}
 

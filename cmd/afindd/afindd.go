@@ -136,7 +136,6 @@ func main() {
 
 			go func() {
 				defer s.CloseNoErr()
-				log.Debug("rpc server starting")
 				err = s.Serve()
 				if err != nil {
 					crit(err)
