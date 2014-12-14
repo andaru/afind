@@ -19,6 +19,14 @@ func eq(t *testing.T, exp, val interface{}) bool {
 	return true
 }
 
+func neq(t *testing.T, exp, val interface{}) bool {
+	if exp == val {
+		t.Errorf("don't want both equal to %v", exp)
+		return false
+	}
+	return true
+}
+
 func TestIsLocal(t *testing.T) {
 	check := func(config *afind.Config, exp string) bool {
 		return isLocal(config, exp)
@@ -52,4 +60,15 @@ func TestGetAddress(t *testing.T) {
 	eq(t, getAddress(meta, ""), "localhost:"+utils.DefaultRpcPort)
 	meta["host"] = "foobar"
 	eq(t, getAddress(meta, "1234"), "foobar:1234")
+}
+
+func TestNewServer(t *testing.T) {
+	db := afind.NewDb()
+	c := newConfig()
+	indexer := afind.NewIndexer(&c, db)
+	searcher := afind.NewSearcher(&c, db)
+	server := NewServer(db, indexer, searcher, &c)
+	neq(t, nil, server)
+	eq(t, indexer, server.indexer)
+	eq(t, searcher, server.searcher)
 }
