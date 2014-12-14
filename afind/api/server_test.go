@@ -4,7 +4,20 @@ import (
 	"testing"
 
 	"github.com/andaru/afind/afind"
+	"github.com/andaru/afind/utils"
 )
+
+func newConfig() afind.Config {
+	return afind.Config{RepoMeta: make(map[string]string)}
+}
+
+func eq(t *testing.T, exp, val interface{}) bool {
+	if exp != val {
+		t.Errorf("want %v, got %v", exp, val)
+		return false
+	}
+	return true
+}
 
 func TestIsLocal(t *testing.T) {
 	check := func(config *afind.Config, exp string) bool {
@@ -29,4 +42,14 @@ func TestIsLocal(t *testing.T) {
 	assertTrue(config, "localhost")
 	assertFalse(config, "bs123")
 	assertTrue(config, "testhost")
+}
+
+func TestGetAddress(t *testing.T) {
+	meta := make(afind.Meta)
+	meta["foo"] = "bar"
+	meta["host"] = "localhost"
+
+	eq(t, getAddress(meta, ""), "localhost:"+utils.DefaultRpcPort)
+	meta["host"] = "foobar"
+	eq(t, getAddress(meta, "1234"), "foobar:1234")
 }

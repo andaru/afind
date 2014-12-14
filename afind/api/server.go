@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/andaru/afind/afind"
+	"github.com/andaru/afind/utils"
 )
 
 // baseServer is the base server implementation, carrying the Register*
@@ -23,22 +24,6 @@ func (s *baseServer) Register() {
 func NewServer(rs afind.KeyValueStorer, ix afind.Indexer,
 	sr afind.Searcher, c *afind.Config) *baseServer {
 	return &baseServer{rs, ix, sr, *c}
-}
-
-func (s *baseServer) SetIndexer(ix afind.Indexer) {
-	s.indexer = ix
-}
-
-func (s *baseServer) SetSearcher(sr afind.Searcher) {
-	s.searcher = sr
-}
-
-func (s *baseServer) SetRepos(repos afind.KeyValueStorer) {
-	s.repos = repos
-}
-
-func (s *baseServer) SetConfig(config afind.Config) {
-	s.config = config
 }
 
 // Utility functions used by servers
@@ -64,7 +49,7 @@ func isLocal(config *afind.Config, h string) bool {
 
 func getAddress(meta afind.Meta, port string) string {
 	if port == "" {
-		port = ":30800"
+		port = ":" + utils.DefaultRpcPort
 	} else if port[0] != ':' {
 		port = ":" + port
 	}
