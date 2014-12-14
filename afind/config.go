@@ -42,10 +42,6 @@ const (
 	defaultTimeoutSearch = 30 * time.Second
 )
 
-func newConfig() Config {
-	return Config{RepoMeta: make(map[string]string)}
-}
-
 func (c *Config) SetVerbose(verbose bool) {
 	c.verbose = verbose
 }
@@ -56,7 +52,6 @@ func (c *Config) Verbose() bool {
 
 func (c *Config) GetTimeoutIndex() time.Duration {
 	if c.TimeoutIndex == 0 {
-		log.Debug("setting default index timeout %v", defaultTimeoutIndex)
 		c.TimeoutIndex = defaultTimeoutIndex
 	}
 	return c.TimeoutIndex
@@ -64,7 +59,6 @@ func (c *Config) GetTimeoutIndex() time.Duration {
 
 func (c *Config) GetTimeoutSearch() time.Duration {
 	if c.TimeoutSearch == 0 {
-		log.Debug("setting default search timeout %v", defaultTimeoutSearch)
 		c.TimeoutSearch = defaultTimeoutSearch
 	}
 	return c.TimeoutSearch
