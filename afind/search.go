@@ -45,11 +45,21 @@ type SearchQuery struct {
 	// Override the 30 second default request timeout
 	Timeout time.Duration `json:"timeout"`
 
+	Context SearchContext `json:"context"`
 	// recursive query: set on RPC requests to enable single hop
 	// recursion. JSON requests may not explicitly set recursion
 	// as an extra loop safety. The HTTP request handler sets
 	// recursion appropriately.
 	Recurse bool `json:"-"`
+}
+
+// SearchContext provides options around the lines of context
+// surrounding the match text. By default, no context lines are
+// supplied.
+type SearchContext struct {
+	Both int `json:"both"`
+	Pre  int `json:"pre"`
+	Post int `json:"post"`
 }
 
 // Returns a SearchQuery value given the parameters
@@ -130,7 +140,7 @@ func (r *SearchResult) Update(other *SearchResult) {
 	if r.Error == "" {
 		r.Error = other.Error
 	} else {
-		// Append unique messages
+		// Append unique messages to the global error string
 		if r.Error != other.Error {
 			r.Error += "\n" + other.Error
 		}

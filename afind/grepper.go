@@ -23,6 +23,10 @@ type grep struct {
 	filename string
 	root     string
 	err      error
+
+	ctxPre  int
+	ctxPost int
+	ctxBoth int
 }
 
 // Returns a new local RE2 grepper for this repository
@@ -89,6 +93,11 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 	}
 	pelapsed := time.Since(pstart)
 	resp.ElapsedPost = pelapsed
+
+	// Setup context parameters
+	s.ctxPre = query.Context.Pre
+	s.ctxPost = query.Context.Post
+	s.ctxBoth = query.Context.Both
 
 	// Now grep each candidate file to get the final matches
 	for _, id_ := range post {
@@ -159,8 +168,7 @@ func (s *grep) reader(r io.Reader, name string) (
 
 		chunkStart := 0
 		for chunkStart < end {
-			m1 := s.Regexp.Match(
-				buf[chunkStart:end], beginText, endText) + chunkStart
+			m1 := s.Regexp.Match(buf[chunkStart:end], beginText, endText) + chunkStart
 			beginText = false
 			if m1 < chunkStart {
 				break
@@ -168,15 +176,52 @@ func (s *grep) reader(r io.Reader, name string) (
 			s.Match = true
 			lineStart := bytes.LastIndex(
 				buf[chunkStart:m1], nl) + 1 + chunkStart
+
 			lineEnd := m1 + 1
 			if lineEnd > end {
 				lineEnd = end
 			}
 			lineno += countNL(buf[chunkStart:lineStart])
 			if lineStart != lineEnd {
+				// We had a real match, record it
 				matches[strconv.Itoa(lineno)] = string(buf[lineStart:lineEnd])
 				nmatches++
+			} else {
+				s.Match = false
 			}
+
+			// Set context bounds; if both pre/post and both are set, pick the biggest
+			npre := s.ctxBoth
+			if s.ctxPre > npre {
+				npre = s.ctxPre
+			}
+			npost := s.ctxBoth
+			if s.ctxPost > npost {
+				npost = s.ctxPost
+			}
+
+			if npre > 0 && s.Match {
+				prectx := getPreCtx(buf, 3, chunkStart, lineStart)
+				if len(prectx) > 0 {
+					ctxline := lineno
+					for _, b := range prectx {
+						ctxline--
+						matches[strconv.Itoa(ctxline)] = string(b)
+					}
+				}
+			}
+
+			if npost > 0 && s.Match {
+				postctx := getPostCtx(buf, 3, m1, end)
+				if len(postctx) > 0 {
+					ctxline := lineno
+					for _, b := range postctx {
+						ctxline++
+						matches[strconv.Itoa(ctxline)] = string(b)
+					}
+				}
+			}
+
 			lineno++
 			chunkStart = lineEnd
 		}
@@ -193,9 +238,6 @@ func (s *grep) reader(r io.Reader, name string) (
 		}
 	}
 
-	if err != nil {
-		return 0, nil, err
-	}
 	return nmatches, matches, err
 }
 
@@ -213,4 +255,55 @@ func countNL(b []byte) int {
 		b = b[i+1:]
 	}
 	return n
+}
+
+// helper function to get the proceeding context
+
+func getPreCtx(b []byte, n, chunkstart, linestart int) [][]byte {
+	// todo: don't read from chunkstart every time, that may be
+	// a very large amount of data. instead, read backwards until we
+	// get N newlines or reach chunkstart.
+
+	result := make([][]byte, 0)
+	ctxstart := linestart
+	for n > 0 {
+		if ctxstart <= chunkstart || len(b) < (ctxstart-chunkstart) {
+			// no more data to read
+			break
+		}
+		newctxstart := bytes.LastIndex(b[chunkstart:ctxstart-1], nl) + 1 + chunkstart
+		newb := b[newctxstart:ctxstart]
+		if len(newb) > 0 {
+			result = append(result, newb)
+		}
+		ctxstart = newctxstart
+		n--
+	}
+	return result
+}
+
+func getPostCtx(b []byte, n, chunkstart, end int) [][]byte {
+	result := make([][]byte, 0)
+	// shortcut for zero lines of context
+	if n == 0 {
+		return result
+	}
+	ctxstart := chunkstart
+	for n >= 0 {
+		if ctxstart >= end {
+			break
+		}
+		newctxstart := bytes.Index(b[chunkstart:end], nl) + 1 + ctxstart
+		if newctxstart > end {
+			newctxstart = end
+		}
+		result = append(result, b[ctxstart:newctxstart])
+		ctxstart = newctxstart
+		n--
+	}
+	// Strip the first line, which includes the match
+	if len(result) > 0 {
+		result = result[1:]
+	}
+	return result
 }

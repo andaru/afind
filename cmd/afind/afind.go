@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/rpc"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 
 	"code.google.com/p/go.net/context"
@@ -34,6 +36,11 @@ var (
 	// -key 1,2 -key 3 : one or more comma separated groups of keys
 	flagKeys flags.StringSlice
 	flagMeta = make(flags.SSMap)
+
+	// context, -An, -Bn, -Cn
+	flagContextPost = flagSetSearch.Int("A", 0, "Print NUM lines of trailing context")
+	flagContextPre  = flagSetSearch.Int("B", 0, "Print NUM lines of leading context")
+	flagContextBoth = flagSetSearch.Int("C", 0, "Print NUM lines of output context")
 
 	// Index flagset
 	flagSetIndex = flag.NewFlagSet("index", flag.ExitOnError)
@@ -151,6 +158,14 @@ func newContext() (*ctx, error) {
 	return context, nil
 }
 
+func getSearchContext() afind.SearchContext {
+	return afind.SearchContext{
+		Both: *flagContextBoth,
+		Pre:  *flagContextPre,
+		Post: *flagContextPost,
+	}
+}
+
 func search(c *ctx, query string) error {
 	request := afind.SearchQuery{
 		Re:         query,
@@ -161,6 +176,7 @@ func search(c *ctx, query string) error {
 		// Timeout:    time.Duration(*flagTimeoutSearch) * time.Second,
 	}
 	request.Recurse = true
+	request.Context = getSearchContext()
 	sr, err := c.searcher.Search(context.Background(), request)
 	if err == nil && sr.Error == "" {
 		printMatches(sr)
@@ -300,9 +316,17 @@ func doAfind() error {
 func printMatches(sr *afind.SearchResult) {
 	for name, repos := range sr.Matches {
 		for repo, matches := range repos {
-			for l, text := range matches {
+			nums := make([]int, 0)
+			for l, _ := range matches {
+				if linenum, err := strconv.Atoi(l); err == nil {
+					nums = append(nums, linenum)
+				}
+			}
+			sort.Ints(nums)
+			for _, linenum := range nums {
+				textlinenum := strconv.Itoa(linenum)
 				fmt.Printf("%s:%s:%s:%s",
-					repo, name, l, text)
+					repo, name, textlinenum, matches[textlinenum])
 			}
 		}
 	}
