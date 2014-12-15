@@ -15,12 +15,7 @@ type baseServer struct {
 	config   afind.Config
 }
 
-// A virtual function for the HTTP/RPC servers to register their
-// endpoints once the components are ready to go
-func (s *baseServer) Register() {
-}
-
-// Setup everything in one go
+// NewServer creates a new base server from the components provided
 func NewServer(rs afind.KeyValueStorer, ix afind.Indexer,
 	sr afind.Searcher, c *afind.Config) *baseServer {
 	return &baseServer{rs, ix, sr, *c}
