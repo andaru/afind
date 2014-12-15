@@ -33,7 +33,7 @@ func TestConfig(t *testing.T) {
 	c.RepoMeta["host"] = "host123"
 	c.RepoMeta["port.rpc"] = defaultPortRpc
 	eq(t, "host123", c.Host())
-	eq(t, "30800", c.PortRpc())
+	eq(t, utils.DefaultRpcPort, c.PortRpc())
 	neq(t, nil, c.GetTimeoutIndex())
 	neq(t, nil, c.GetTimeoutSearch())
 	eq(t, false, c.Verbose())
@@ -48,4 +48,5 @@ func TestListenerRpc(t *testing.T) {
 	neq(t, listenah.Addr().String(), "0.0.0.0:0")
 	neq(t, listenah.Addr().String(), "")
 	eq(t, err, nil)
+	_ = listenah.Close()
 }
