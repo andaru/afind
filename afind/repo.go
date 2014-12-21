@@ -38,8 +38,8 @@ type Repo struct {
 	// The time spent producing the indices for this repo
 	ElapsedIndexing time.Duration `json:"elapsed"`
 
-	// When the repo was created (indexed)
-	TimeCreated time.Time `json:"time_created"`
+	// When the repo was last updated (used for repo database aging)
+	TimeUpdated time.Time `json:"time_updated"`
 }
 
 func (r *Repo) SetMeta(defaults Meta, replace Meta) {
@@ -60,11 +60,6 @@ func (r *Repo) Host() string {
 	return r.Meta.Host()
 }
 
-// PortRpc returns the RPC port of the Repo's indexer
-func (r *Repo) PortRpc() string {
-	return r.Meta["port.rpc"]
-}
-
 // Shards returns the Repo's slice of shard file names
 func (r *Repo) Shards() []string {
 	shards := make([]string, r.NumShards)
@@ -75,15 +70,28 @@ func (r *Repo) Shards() []string {
 	return shards
 }
 
-// NewRepo returns an empty initialized Repo
+// Stale returns true if the Repo is considered stale.
+// A Repo is stale if the supplied timeout has elapsed since the
+// last time the repo was updated.
+func (r *Repo) Stale(timeout time.Duration) bool {
+	if r.TimeUpdated.Add(timeout).Before(time.Now()) {
+		return false
+	}
+	return true
+}
+
+// NewRepo returns an initialized empty Repo
 func NewRepo() *Repo {
 	return &Repo{Meta: make(Meta)}
 }
 
-// Meta is string/string metadata used in queries
+// Meta is string/string map, used in indexing and search queries.
+// We use a typedef to bind methods to the map because afind places
+// significance in the value of certain keys (e.g., `host`), and to
+// provide equality, query metadata matching and update functions.
 type Meta map[string]string
 
-// Host returns the "host" key from the metadata.
+// Host returns the `host` key from the metadata.
 // This key is used by the afind system to denote the host containing
 // a particular Repo.
 func (m Meta) Host() string {

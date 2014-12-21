@@ -31,9 +31,9 @@ func TestConfig(t *testing.T) {
 	neq(t, "", c.Host())
 	eq(t, c.PortRpc(), utils.DefaultRpcPort)
 	c.RepoMeta["host"] = "host123"
-	c.RepoMeta["port.rpc"] = defaultPortRpc
 	eq(t, "host123", c.Host())
-	eq(t, utils.DefaultRpcPort, c.PortRpc())
+	c.RepoMeta["host"] = "newhost"
+	eq(t, "newhost", c.Host())
 	neq(t, nil, c.GetTimeoutIndex())
 	neq(t, nil, c.GetTimeoutSearch())
 	eq(t, false, c.Verbose())

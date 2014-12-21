@@ -56,7 +56,7 @@ func (s *indexServer) webIndex(rw http.ResponseWriter, req *http.Request,
 	enc := json.NewEncoder(rw)
 	setJson(rw)
 
-	// parse and validate the request
+	// parse and validate the JSON request
 	var q afind.IndexQuery
 	if err := dec.Decode(&q); err != nil {
 		rw.WriteHeader(400)
@@ -120,21 +120,31 @@ func timeoutIndex(req afind.IndexQuery, cfg *afind.Config) time.Duration {
 func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 	resp *afind.IndexResult, err error) {
 
-	log.Debug("index request %+v", req)
 	resp = afind.NewIndexResult()
-	// Return the existing repo if it already exists
-	if r := s.repos.Get(req.Key); r != nil {
-		resp.Repo = r.(*afind.Repo)
-		return
-	}
-
-	// Get a request context
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+	log.Debug("index [%s] request root=%v num_dirs=%d num_files=%d root=%v timeout=%v",
+		req.Key, req.Root, len(req.Dirs), len(req.Files), req.Timeout)
 
 	resp = afind.NewIndexResult()
 	local := isLocal(s.cfg, req.Meta.Host())
+
+	// Duplicate request handling: if this is a remote indexing
+	// request and we've got a recent matching Repo for that key
+	// already, save RPC bandwith and latency and return our copy.
+	r := s.repos.Get(req.Key)
+	if !local && r != nil {
+		resp.Repo = r.(*afind.Repo)
+		if missing := resp.Repo.Stale(s.cfg.TimeoutRepoStale); !missing {
+			return
+		}
+	}
+
+	// setup a request context
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	if local || req.Recurse {
+		// we have a local or a remote indexing request to make.
+		// recursion is disabled on any request relayed to a remote afindd.
 		req.Recurse = false
 		ch := make(chan *afind.IndexResult, 1)
 		reqch := make(chan par.RequestFunc, 1)
@@ -150,7 +160,7 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 		if resp.Error != "" {
 			err = errors.New(resp.Error)
 		} else if resp.Repo != nil {
-			// update the repo store if the repo is valid
+			// update the repo store if the response is good
 			err = s.repos.Set(resp.Repo.Key, resp.Repo)
 		}
 	} else {

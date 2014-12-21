@@ -1,15 +1,16 @@
 package afind
 
 import (
+	"os"
 	"path"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/errs"
 	"github.com/andaru/codesearch/index"
-	"os"
-	"strconv"
 )
 
 // An Indexer can index text sources for a single Repo each request
@@ -30,10 +31,11 @@ type Indexer interface {
 // over a socket. The default value for 'host' is obtained from
 // the request context's config (from RepoMeta["host"])
 type IndexQuery struct {
-	Key  string   `json:"key"`  // The Key for the new Repo
-	Root string   `json:"root"` // The root path for all Dirs
-	Dirs []string `json:"dirs"` // Sub directories of Root to index
-	Meta Meta     `json:"meta"` // Metadata set on the Repo
+	Key   string   `json:"key"`  // The Key for the new Repo
+	Root  string   `json:"root"` // The root path for all Dirs
+	Dirs  []string `json:"dirs"` // Sub directories of Root to index
+	Files []string // Individual files to index. No impl, so not yet JSON tagged
+	Meta  Meta     `json:"meta"` // Metadata set on the Repo
 
 	// Recursive query: set to have afindd search recursively one hop
 	// JSON payloads cannot set recursion (the HTTP request handler
@@ -52,6 +54,10 @@ type IndexResult struct {
 	Error string `json:"error,omitempty"`
 }
 
+const (
+	maxShards = 32
+)
+
 // Sets the error string on the IndexResult if the error passed is not
 // nil, else is a no-op.
 func (ir *IndexResult) SetError(err error) {
@@ -60,23 +66,21 @@ func (ir *IndexResult) SetError(err error) {
 	}
 }
 
-// Creates a new IndexQuery given a key, index root directory and a
-// slice of sub directories to be indexed.
-func NewIndexQuery(key, root string, dirs []string) IndexQuery {
-	ir := IndexQuery{
-		Key:  key,
-		Root: root,
-		Dirs: make([]string, len(dirs)),
-		Meta: make(Meta),
+// Creates a new, keyed but otherwise empty IndexQuery.
+// There must be at least one entry in Dirs or Files when the
+// query is sent.
+func NewIndexQuery(key string) IndexQuery {
+	return IndexQuery{
+		Key:   key,
+		Files: make([]string, 0),
+		Dirs:  make([]string, 0),
+		Meta:  make(Meta),
 	}
-	for i, dir := range dirs {
-		ir.Dirs[i] = dir
-	}
-	return ir
 }
 
-// Validates the IndexQuery, returning the first error found
-func (r *IndexQuery) ValidationError() error {
+// Normalize validates and moralizes the IndexQuery
+func (r *IndexQuery) Normalize() error {
+	// Validate
 	if len(r.Dirs) == 0 {
 		return errs.NewValueError(
 			"dirs",
@@ -114,14 +118,16 @@ func NewIndexer(cfg *Config, repos KeyValueStorer) indexer {
 	return indexer{cfg: cfg, repos: repos}
 }
 
-func getroot(c *Config, q *IndexQuery) string {
+func getRoot(c *Config, q *IndexQuery) string {
+	q.Root = strings.TrimSuffix(q.Root, string(os.PathSeparator))
 	if c.IndexInRepo {
 		return q.Root
 	}
 	return path.Join(c.IndexRoot, q.Key)
 }
 
-// Index executes the request, producing a response and optionally an error
+// Index executes the indexing request (on this machine, in this
+// case), producing a response and optionally an error.
 func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	resp *IndexResult, err error) {
 
@@ -130,16 +136,7 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	start := time.Now()
 	resp = NewIndexResult()
 
-	// do request validation and exit early on errors
-	if err = req.ValidationError(); err != nil {
-		return
-	}
-
-	// If the Repo exists, just return it. This behavior is used
-	// to backfill repos on a front end (e.g., if it just
-	// restarted).
-	if r := i.repos.Get(req.Key); r != nil {
-		resp.Repo = r.(*Repo)
+	if err = req.Normalize(); err != nil {
 		return
 	}
 
@@ -147,9 +144,11 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	numShards := i.cfg.NumShards
 	if numShards == 0 {
 		numShards = 2
+	} else if numShards > maxShards {
+		numShards = maxShards
 	}
 
-	indexroot := getroot(i.cfg, &req)
+	indexroot := getRoot(i.cfg, &req)
 	if err = makeIndexRoot(indexroot); err != nil && !os.IsExist(err) {
 		return
 	}
@@ -168,7 +167,10 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	}
 	ndirs := 0
 	nfiles := 0
-	advance := len(repo.Root) + 1
+
+	// Build a rootstripper to remove the repo.Root from each
+	// entry we add to the index, to save index space
+	rs := newRootStripper(repo.Root)
 	nshards := len(shards)
 
 	// For each provided subdir, walk the contents in series for now
@@ -210,8 +212,7 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 					// Add the file to the next shard
 					nfiles++
 					slotnum := nfiles % nshards
-					shards[slotnum].AddFileInRoot(
-						repo.Root, p[advance:])
+					shards[slotnum].AddFileInRoot(repo.Root, rs.suffix(p))
 				}
 				return nil
 			})
@@ -228,7 +229,7 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 		repo.SizeIndex += ByteSize(shard.IndexBytes())
 	}
 	repo.ElapsedIndexing = time.Since(start)
-	repo.TimeCreated = time.Now().UTC()
+	repo.TimeUpdated = time.Now().UTC()
 
 	var msg string
 	if err != nil {
@@ -245,4 +246,20 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 
 func makeIndexRoot(path string) error {
 	return os.MkdirAll(path, 0755)
+}
+
+type rootstripper struct {
+	advance int
+}
+
+func newRootStripper(rootpath string) rootstripper {
+	advance := len(rootpath)
+	if !strings.HasSuffix(rootpath, string(os.PathSeparator)) {
+		advance++
+	}
+	return rootstripper{advance}
+}
+
+func (rs rootstripper) suffix(s string) string {
+	return s[rs.advance:]
 }

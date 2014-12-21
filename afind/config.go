@@ -25,6 +25,8 @@ type Config struct {
 	TimeoutIndex  time.Duration
 	TimeoutSearch time.Duration
 
+	TimeoutRepoStale time.Duration
+
 	// Metadata to apply to every Repo created by an indexer with
 	// this config. Manipulated by e.g., SetHost()
 	RepoMeta map[string]string

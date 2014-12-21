@@ -40,7 +40,10 @@ func TestMetaPointer(t *testing.T) {
 
 func TestRepoSetup(t *testing.T) {
 	r1 := NewRepo()
-	ir := NewIndexQuery("key", "root", []string{"dir1", "dir2"})
+	ir := NewIndexQuery("key")
+	//ir := NewIndexQuery("key", "root", []string{"dir1", "dir2"})
+	ir.Dirs = []string{"dir1", "dir2"}
+	ir.Root = "/"
 	ir.Meta["key"] = "value"
 	ir.Meta["host"] = "abc"
 	r2 := newRepoFromQuery(&ir, "/")
@@ -83,11 +86,11 @@ func TestRepoJson(t *testing.T) {
 	// pointer to a location, rather than nil, which are both
 	// represented as 0 unix time in UTC. Copy its version so
 	// DeepEqual works.
-	newr.TimeCreated = r.TimeCreated
+	newr.TimeUpdated = r.TimeUpdated
 	if !reflect.DeepEqual(r, newr) {
 		t.Logf("self=%#v", r)
 		t.Logf("other=%#v", newr)
-		t.Logf("created %v %v", r.TimeCreated, newr.TimeCreated)
+		t.Logf("created %v %v", r.TimeUpdated, newr.TimeUpdated)
 		t.Error("Repo lost data during marshal/unmarshal")
 	}
 

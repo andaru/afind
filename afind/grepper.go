@@ -36,6 +36,19 @@ func newGrep(ixfilename, root string) *grep {
 	return &grep{filename: ixfilename, root: root}
 }
 
+// builds regular expressions for text and pathname matching
+func buildRegexps(query *SearchQuery) (re, pathre *regexp.Regexp, err error) {
+	pattern := "(?m)" + query.Re
+	if query.IgnoreCase {
+		pattern = "(?i)" + pattern
+	}
+	re, err = regexp.Compile(pattern)
+	if query.PathRe != "" {
+		pathre, err = regexp.Compile(query.PathRe)
+	}
+	return
+}
+
 func (s *grep) search(ctx context.Context, query SearchQuery) (
 	resp *SearchResult, err error) {
 
@@ -44,26 +57,17 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 
 	// Setup the RE2 expression text based on query options
 	var re *regexp.Regexp
-	pattern := "(?m)" + query.Re
-	if query.IgnoreCase {
-		pattern = "(?i)" + pattern
-	}
-	if re, err = regexp.Compile(pattern); err != nil {
+	var pathre *regexp.Regexp
+	if re, pathre, err = buildRegexps(&query); err != nil {
 		return
-	}
-	var fileRe *regexp.Regexp
-	if query.PathRe != "" {
-		if fileRe, err = regexp.Compile(query.PathRe); err != nil {
-			return
-		}
 	}
 
 	// Check to see if the repo root is still available. If not,
 	// return an error so that the caller can mark the repository
 	// unavailable.
-	if _, err := os.Stat(s.root); err != nil {
+	if _, err = os.Stat(s.root); err != nil {
 		log.Debug("grepper couldn't stat repo root %s: %v", s.root, err)
-		return resp, err
+		return
 	}
 
 	// Attempt to open the index file
@@ -80,11 +84,11 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 	post = ix.PostingQuery(q)
 
 	// Optionally filter the path names in the posting query results
-	if fileRe != nil {
+	if pathre != nil {
 		files := make([]uint32, 0, len(post))
 		for _, id_ := range post {
 			name := ix.Name(id_)
-			if fileRe.MatchString(name, true, true) < 0 {
+			if pathre.MatchString(name, true, true) < 0 {
 				continue
 			}
 			files = append(files, id_)
