@@ -75,9 +75,9 @@ func (r *Repo) Shards() []string {
 // last time the repo was updated.
 func (r *Repo) Stale(timeout time.Duration) bool {
 	if r.TimeUpdated.Add(timeout).Before(time.Now()) {
-		return false
+		return true
 	}
-	return true
+	return false
 }
 
 // NewRepo returns an initialized empty Repo
