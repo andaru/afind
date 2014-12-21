@@ -116,3 +116,11 @@ func TestBackedDb(t *testing.T) {
 		t.Error("unexpected error on close():", err.Error())
 	}
 }
+
+func TestDbConstructors(t *testing.T) {
+	memdb := NewDb()
+	filedb := NewJsonBackedDb("./test_db_constructor.json")
+	if memdb.Size() != 0 || filedb.Size() != 0 {
+		t.Error("expected empty Size() from file and mem db")
+	}
+}
