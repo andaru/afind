@@ -148,12 +148,12 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 		numShards = maxShards
 	}
 
-	indexroot := getRoot(i.cfg, &req)
-	if err = makeIndexRoot(indexroot); err != nil && !os.IsExist(err) {
+	root := getRoot(i.cfg, &req)
+	if err = os.MkdirAll(root, 0755); err != nil && !os.IsExist(err) {
 		return
 	}
 
-	repo := newRepoFromQuery(&req, indexroot)
+	repo := newRepoFromQuery(&req, root)
 	repo.SetMeta(i.cfg.RepoMeta, req.Meta)
 	resp.Repo = repo
 
@@ -242,10 +242,6 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	}
 	log.Info("index backend [%v] %v [%v]", req.Key, msg, repo.ElapsedIndexing)
 	return
-}
-
-func makeIndexRoot(path string) error {
-	return os.MkdirAll(path, 0755)
 }
 
 type rootstripper struct {
