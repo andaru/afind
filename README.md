@@ -110,11 +110,11 @@ The `afind` CLI command:
 
 Is equivalent to the HTTP request:
 
-    $ curl -d '{"q": "foobar"}' http://localhost:30880/search
+    $ curl -d '{"re": "foobar"}' http://localhost:30880/search
     
 To search in source repos for a particular project, like `mainline`:
 
-    $ curl -d '{"q": "foobar", meta: {"project": "mainline"}}' http://localhost:30880/search
+    $ curl -d '{"re": "foobar", meta: {"project": "mainline"}}' http://localhost:30880/search
 
 
 Contact
