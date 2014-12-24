@@ -14,6 +14,7 @@ import (
 	"github.com/andaru/afind/afind"
 	"github.com/andaru/afind/afind/api"
 	"github.com/andaru/afind/flags"
+	"github.com/andaru/afind/utils"
 )
 
 // This is the afind command-line client
@@ -21,8 +22,7 @@ import (
 var (
 	// Master flagset options
 	// Afind master to connect to
-	flagRpcAddress = flag.String("server", ":30800",
-		"Afind server RPC address")
+	flagRpcAddress = flag.String("server", "", "Afind server RPC address")
 
 	// Search flagset options (for afind search -opt)
 	flagSetSearch = flag.NewFlagSet("search", flag.ExitOnError)
@@ -137,8 +137,27 @@ type ctx struct {
 	indexer  *api.IndexerClient
 }
 
+// Gets the server address from the environment and the --server
+// flag. if the flag is provided, it overrides the AFIND_SERVER
+// environment variable. The default RPC port number will be
+// appended if it is not included in the source value.
+func getFlagRpcAddress() string {
+	if *flagRpcAddress != "" {
+		return *flagRpcAddress
+	} else {
+		server := os.Getenv("AFIND_SERVER")
+		if server == "" {
+			return ":" + utils.DefaultRpcPort
+		} else if !strings.Contains(server, ":") {
+			return ":" + server
+		} else {
+			return server
+		}
+	}
+}
+
 func newContext() (*ctx, error) {
-	cl, err := rpc.Dial("tcp", *flagRpcAddress)
+	cl, err := rpc.Dial("tcp", getFlagRpcAddress())
 	if err != nil {
 		return nil, err
 	}
