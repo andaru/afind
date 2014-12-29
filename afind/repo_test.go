@@ -46,7 +46,11 @@ func TestRepoSetup(t *testing.T) {
 	ir.Dirs = []string{"dir1", "dir2"}
 	ir.Root = "/"
 	ir.Meta["key"] = "value"
-	ir.Meta["host"] = "abc"
+	// should have the same sort of effect as
+	ir.Meta["host"] = "xyz"
+	// should change the value above, referred to by
+	// Repo.Host/Repo.Meta.Host()
+	ir.Meta.SetHost("abc")
 	r2 := newRepoFromQuery(&ir, "/")
 
 	if r1.Host() != "" || r2.Host() != "abc" {
@@ -60,6 +64,25 @@ func TestRepoSetup(t *testing.T) {
 	}
 }
 
+func TestRepoSetMeta(t *testing.T) {
+	defaults := Meta{"host": "defaulthost"}
+	r1 := NewRepo()
+	r1.Meta.SetHost("abc") // will be replaced by defaulthost
+	r1.Meta["foo"] = "bar"
+
+	// host below is replacing abc
+	reqMeta := Meta{"project": "foo", "host": "final"}
+
+	r1.SetMeta(defaults, reqMeta)
+	if len(r1.Meta) != 3 {
+		t.Error("want 3 keys in Meta, got", r1.Meta)
+	}
+	eq(t, "bar", r1.Meta["foo"])
+	eq(t, "final", r1.Meta.Host())
+	eq(t, "final", r1.Host())
+	eq(t, "foo", r1.Meta["project"])
+}
+
 func TestRepoJson(t *testing.T) {
 	r := Repo{Meta: make(map[string]string)}
 	r.Root = "root"
@@ -68,7 +91,6 @@ func TestRepoJson(t *testing.T) {
 	r.IndexPath = "indexpath"
 	r.SetHost("m123.foo")
 	r.State = INDEXING
-	r.NumDirs = 22
 	r.NumFiles = 33
 	r.NumShards = 6
 
@@ -100,7 +122,6 @@ func TestRepoJson(t *testing.T) {
 	eq(t, "m123.foo", newr.Host())
 	eq(t, "INDEXING", newr.State)
 	eq(t, "key", newr.Key)
-	eq(t, 22, newr.NumDirs)
 	eq(t, 33, newr.NumFiles)
 	eq(t, 6, newr.NumShards)
 }

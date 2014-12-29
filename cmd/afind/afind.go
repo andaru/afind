@@ -234,14 +234,14 @@ func repoAsString(r *afind.Repo) string {
 	meta = meta[:len(meta)-2] + "}"
 
 	return (fmt.Sprintf("repo: %s [%s]\n", r.Key, r.State) +
-		fmt.Sprintf("  last updated:  %v\n", r.TimeUpdated) +
-		fmt.Sprintf("  indexing time: %v\n", r.ElapsedIndexing) +
-		fmt.Sprintf("  state:         %s\n", r.State) +
-		fmt.Sprintf("  root path:     %v\n", r.Root) +
-		fmt.Sprintf("  data size:     %s\n", r.SizeData) +
-		fmt.Sprintf("  index size:    %s\n", r.SizeIndex) +
-		fmt.Sprintf("  files/dirs:    %d/%d\n", r.NumFiles, r.NumDirs) +
-		fmt.Sprintf("  metadata:      %v\n", meta))
+		fmt.Sprintf("  last updated: %v\n", r.TimeUpdated) +
+		fmt.Sprintf("  indexed in:   %v\n", r.ElapsedIndexing) +
+		fmt.Sprintf("  state:        %s\n", r.State) +
+		fmt.Sprintf("  root path:    %v\n", r.Root) +
+		fmt.Sprintf("  data size:    %s\n", r.SizeData) +
+		fmt.Sprintf("  index size:   %s\n", r.SizeIndex) +
+		fmt.Sprintf("  files:        %d\n", r.NumFiles) +
+		fmt.Sprintf("  metadata:     %v\n", meta))
 }
 
 func repos(c *ctx, key string) error {

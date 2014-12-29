@@ -130,10 +130,9 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 	// Duplicate request handling: if this is a remote indexing
 	// request and we've got a recent matching Repo for that key
 	// already, save RPC bandwith and latency and return our copy.
-	r := s.repos.Get(req.Key)
-	if !local && r != nil {
+	if r := s.repos.Get(req.Key); r != nil {
 		resp.Repo = r.(*afind.Repo)
-		if missing := resp.Repo.Stale(s.cfg.TimeoutRepoStale); !missing {
+		if local || !resp.Repo.Stale(s.cfg.TimeoutRepoStale) {
 			return
 		}
 	}
