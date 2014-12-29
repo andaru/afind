@@ -1,6 +1,7 @@
 package afind
 
 import (
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -10,7 +11,9 @@ import (
 
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/errs"
+	"github.com/andaru/afind/utils"
 	"github.com/andaru/codesearch/index"
+	"github.com/savaki/par"
 )
 
 // An Indexer can index text sources for a single Repo each request
@@ -108,14 +111,23 @@ func NewIndexResult() *IndexResult {
 
 // indexer carries our private Indexer implementation
 type indexer struct {
-	cfg   *Config
-	repos KeyValueStorer
+	cfg     *Config
+	shards  []index.IndexWriter
+	repos   KeyValueStorer
+	sourcer readerSourcer
+	writer  index.IndexWriter // template, used for shards
+	names   chan string
 }
 
 // NewIndexer returns a new Indexer implementation given a
 // configuration and repo store
 func NewIndexer(cfg *Config, repos KeyValueStorer) indexer {
-	return indexer{cfg: cfg, repos: repos}
+	return indexer{
+		cfg:    cfg,
+		shards: []index.IndexWriter{},
+		repos:  repos,
+		names:  make(chan string),
+	}
 }
 
 func getRoot(c *Config, q *IndexQuery) string {
@@ -126,26 +138,77 @@ func getRoot(c *Config, q *IndexQuery) string {
 	return path.Join(c.IndexRoot, q.Key)
 }
 
+type readerSourcer interface {
+	Reader(name string) (io.ReadCloser, error)
+}
+
+type indexWriter interface {
+	Create(name string) index.IndexWriter
+	Add(name string, r io.Reader)
+}
+
+type localReader struct {
+	root string
+}
+
+func (l localReader) Reader(name string) (io.ReadCloser, error) {
+	if l.root == "" {
+		panic("localReader.root must not be empty")
+	}
+	return os.Open(path.Join(l.root, name))
+}
+
+func getReaderSourcer(ctx context.Context, root string) readerSourcer {
+	// Allow the readerSourcer to be swapped in for testing.
+	// Defaults to using a local filesystem reader rooted at the
+	// request Root path, which has been validated above.
+	if _sourcer := ctx.Value("readerSourcer"); _sourcer != nil {
+		return _sourcer.(readerSourcer)
+	}
+	return localReader{root}
+}
+
+func getIndexWriter(ctx context.Context) index.IndexWriter {
+	if _writer := ctx.Value("IndexWriter"); _writer != nil {
+		return _writer.(index.IndexWriter)
+	}
+	return nil
+}
+
+func shardName(key string, n int) string {
+	return key + "-" + strconv.Itoa(n) + ".afindex"
+}
+
+func (i *indexer) makeIndexShards(key string) {
+	// create index shards
+	numShards := i.cfg.NumShards
+	if numShards == 0 {
+		numShards = 2
+	}
+	numShards = utils.MinInt(numShards, maxShards)
+	i.shards = make([]index.IndexWriter, numShards)
+	log.Debug("index [%v] has %d shards", key, len(i.shards))
+	for n := range i.shards {
+		name := shardName(key, n)
+		if i.writer == nil {
+			i.shards[n] = index.Create(name)
+		} else {
+			i.shards[n] = i.writer.Create(name)
+		}
+	}
+}
+
 // Index executes the indexing request (on this machine, in this
 // case), producing a response and optionally an error.
 func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	resp *IndexResult, err error) {
 
 	log.Info("index [%v]", req.Key)
-
 	start := time.Now()
-	resp = NewIndexResult()
 
 	if err = req.Normalize(); err != nil {
+		log.Info("index [%v] error: %v [%v]", req.Key, err, time.Since(start))
 		return
-	}
-
-	// By default, use 2 shards (in e.g., tests)
-	numShards := i.cfg.NumShards
-	if numShards == 0 {
-		numShards = 2
-	} else if numShards > maxShards {
-		numShards = maxShards
 	}
 
 	root := getRoot(i.cfg, &req)
@@ -153,77 +216,42 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 		return
 	}
 
+	// Setup the response
+	resp = NewIndexResult()
 	repo := newRepoFromQuery(&req, root)
 	repo.SetMeta(i.cfg.RepoMeta, req.Meta)
 	resp.Repo = repo
+	i.sourcer = getReaderSourcer(ctx, req.Root)
+	i.writer = getIndexWriter(ctx)
 
-	// create index shards
-	shards := make([]*index.IndexWriter, numShards)
-	for n := range shards {
-		name := path.Join(repo.IndexPath,
-			req.Key+"-"+strconv.Itoa(n)+".afindex")
-		log.Debug("adding shard [%d] %v", n, name)
-		shards[n] = index.Create(name)
-	}
-	ndirs := 0
-	nfiles := 0
-
-	// Build a rootstripper to remove the repo.Root from each
-	// entry we add to the index, to save index space
-	rs := newRootStripper(repo.Root)
-	nshards := len(shards)
-
-	// For each provided subdir, walk the contents in series for now
-	for _, path := range req.Dirs {
-		// check to see if the context's timeout has elapsed
-		select {
-		case <-ctx.Done():
-			// set the timeout error and stop working
-			resp.SetError(errs.NewTimeoutError("index"))
-			return
-		default:
-			// pass through if not done
+	// create index shards and concurrently perform indexing
+	i.makeIndexShards(req.Key)
+	// Add query Files and scan Dirs for files to index
+	names, err := i.scanner(ctx, &req)
+	nshards := len(i.shards)
+	ch := make(chan int, nshards)
+	chnames := make(chan string, 100)
+	go func() {
+		for _, name := range names {
+			chnames <- name
 		}
-
-		path = filepath.Join(req.Root, path)
-		log.Debug("walking subdir %v", path)
-		err = filepath.Walk(path,
-			func(p string, info os.FileInfo, werr error) error {
-				// Track the last walk error if set, then bail
-				if werr != nil {
-					err = werr
-					return nil
-				}
-				// Skip entries without info
-				if info == nil {
-					return nil
-				}
-				// Skip excluded extensions and prefixes
-				if IndexPathExcludes.MatchFile(p) {
-					if info.IsDir() {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-
-				if info.IsDir() {
-					ndirs++
-				} else if info.Mode()&os.ModeType == 0 {
-					// Add the file to the next shard
-					nfiles++
-					slotnum := nfiles % nshards
-					shards[slotnum].AddFileInRoot(repo.Root, rs.suffix(p))
-				}
-				return nil
-			})
+		close(chnames)
+	}()
+	reqch := make(chan par.RequestFunc, nshards)
+	for _, shard := range i.shards {
+		reqch <- indexShard(&i, &req, shard, chnames, ch)
 	}
+	close(reqch)
+	err = par.Requests(reqch).WithConcurrency(nshards).DoWithContext(ctx)
+	close(ch)
 
-	// Update counters
-	repo.NumFiles = nfiles
-	repo.NumDirs = ndirs
-	repo.NumShards = nshards
+	// Await incoming results and update the response
+	for num := range ch {
+		repo.NumFiles += num
+	}
+	repo.NumShards = len(i.shards)
 	// Flush our index shard files
-	for _, shard := range shards {
+	for _, shard := range i.shards {
 		shard.Flush()
 		repo.SizeData += ByteSize(shard.DataBytes())
 		repo.SizeIndex += ByteSize(shard.IndexBytes())
@@ -235,12 +263,12 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	if err != nil {
 		repo.State = ERROR
 		resp.Error = err.Error()
-		msg = "failed with error: " + resp.Error
+		msg = "error: " + resp.Error
 	} else {
 		repo.State = OK
-		msg = "suceeded"
+		msg = "ok"
 	}
-	log.Info("index backend [%v] %v [%v]", req.Key, msg, repo.ElapsedIndexing)
+	log.Info("index [%v] %v [%v]", req.Key, msg, repo.ElapsedIndexing)
 	return
 }
 
@@ -258,4 +286,61 @@ func newRootStripper(rootpath string) rootstripper {
 
 func (rs rootstripper) suffix(s string) string {
 	return s[rs.advance:]
+}
+
+// The scanner returns files eligible for indexing
+func (i *indexer) scanner(ctx context.Context, query *IndexQuery) ([]string, error) {
+	var err error
+	rs := newRootStripper(query.Root)
+	names := make([]string, 0)
+
+	// First, add any specific files in the request
+	for _, name := range query.Files {
+		names = append(names, name)
+	}
+
+	// For each of the Dirs, walk the contents
+	for _, path := range query.Dirs {
+		walker := func(p string, info os.FileInfo, werr error) error {
+			if werr != nil {
+				return werr
+			} else if info == nil {
+				return nil
+			} else if IndexPathExcludes.MatchFile(p) {
+				// Skip excluded extensions and dirs
+				if info.IsDir() {
+					return filepath.SkipDir
+				}
+			} else if !info.IsDir() && info.Mode()&os.ModeType == 0 {
+				names = append(names, rs.suffix(p))
+			}
+			return nil
+		}
+		path = filepath.Join(query.Root, path)
+		err = filepath.Walk(path, walker)
+	}
+	return names, err
+}
+
+func indexShard(
+	i *indexer,
+	q *IndexQuery,
+	writer index.IndexWriter,
+	in chan string,
+	out chan int) par.RequestFunc {
+
+	// While there are files to add, add them to the specified shard.
+	return func(ctx context.Context) error {
+		numFiles := 0
+		for name := range in {
+			if r, err := i.sourcer.Reader(name); err == nil {
+				writer.Add(name, r)
+				_ = r.Close()
+				numFiles++
+			}
+		}
+		out <- numFiles
+		return nil
+	}
+
 }

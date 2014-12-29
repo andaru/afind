@@ -27,12 +27,11 @@ type Repo struct {
 	State     string `json:"state"`      // Current repository indexing state
 
 	// Metadata produced during indexing
-	NumDirs   int      `json:"num_dirs"`   // Number of directories indexed
 	NumFiles  int      `json:"num_files"`  // Number of files indexed
 	SizeIndex ByteSize `json:"size_index"` // Size of index
 	SizeData  ByteSize `json:"size_data"`  // Size of the source data
 
-	// Number of shards written to disk, an optimisation to avoid a glob
+	// Number of separate index files (shards) used for this repo
 	NumShards int `json:"num_shards"`
 
 	// The time spent producing the indices for this repo

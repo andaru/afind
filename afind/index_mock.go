@@ -20,7 +20,6 @@ func (i *testIndexer) Index(ctx context.Context, req IndexQuery, ch chan *IndexR
 		Root:            "root",
 		Meta:            Meta{"foo": "bar"},
 		State:           OK,
-		NumDirs:         11,
 		NumFiles:        123,
 		SizeIndex:       ByteSize(131072),
 		SizeData:        ByteSize(1025 * 1024),

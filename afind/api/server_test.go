@@ -1,6 +1,7 @@
 package api
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/andaru/afind/afind"
@@ -12,7 +13,7 @@ func newConfig() afind.Config {
 }
 
 func eq(t *testing.T, exp, val interface{}) bool {
-	if exp != val {
+	if !reflect.DeepEqual(exp, val) {
 		t.Errorf("want %v, got %v", exp, val)
 		return false
 	}
@@ -20,7 +21,7 @@ func eq(t *testing.T, exp, val interface{}) bool {
 }
 
 func neq(t *testing.T, exp, val interface{}) bool {
-	if exp == val {
+	if reflect.DeepEqual(exp, val) {
 		t.Errorf("don't want both equal to %v", exp)
 		return false
 	}
