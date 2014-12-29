@@ -91,7 +91,6 @@ func TestRepoJson(t *testing.T) {
 	r.IndexPath = "indexpath"
 	r.SetHost("m123.foo")
 	r.State = INDEXING
-	r.NumDirs = 22
 	r.NumFiles = 33
 	r.NumShards = 6
 
@@ -123,7 +122,6 @@ func TestRepoJson(t *testing.T) {
 	eq(t, "m123.foo", newr.Host())
 	eq(t, "INDEXING", newr.State)
 	eq(t, "key", newr.Key)
-	eq(t, 22, newr.NumDirs)
 	eq(t, 33, newr.NumFiles)
 	eq(t, 6, newr.NumShards)
 }
