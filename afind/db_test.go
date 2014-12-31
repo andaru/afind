@@ -124,3 +124,18 @@ func TestDbConstructors(t *testing.T) {
 		t.Error("expected empty Size() from file and mem db")
 	}
 }
+
+func TestDbBadCases(t *testing.T) {
+	d := db{}
+	if v := d.read(); v != nil {
+		t.Error("want nil from d.read(), got", v)
+	}
+	// "/" is never a file
+	d = db{bfn: "/"}
+	if v := d.read(); v == nil {
+		t.Error("want error from d.read(), got nil")
+	}
+	if v := d.close(); v == nil {
+		t.Error("want error from d.close(), got nil")
+	}
+}

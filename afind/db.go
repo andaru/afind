@@ -64,30 +64,17 @@ func (d *db) read() error {
 		return err
 	}
 	dec := json.NewDecoder(d.bs)
-	err = dec.Decode(d)
-
-	// todo: xxx
-	// convert up the repos size values
-	// if err == nil {
-	// 	for k, r := range d.R {
-	// 		d.R[k].SizeIndex = r.SizeIndex
-	// 		d.R[k].SizeData = r.SizeData
-	// 	}
-	// }
-
-	return err
+	return dec.Decode(d)
 }
 
 func (d *db) close() error {
 	if err := d.flush(); err != nil {
 		log.Critical("failed to flush backing store: %v", err.Error())
 		return err
+	} else {
+		_ = d.bs.Close()
+		return nil
 	}
-	if err := d.bs.Close(); err != nil {
-		log.Critical("failed to close backing store: %v", err.Error())
-		return err
-	}
-	return nil
 }
 
 func (d *db) Size() int {
