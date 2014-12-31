@@ -185,18 +185,6 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	*SearchResult, error) {
 
 	start := time.Now()
-	msg := "search [" + query.Re + "]"
-	if query.IgnoreCase {
-		msg += " ignore-case"
-	}
-	if query.PathRe != "" {
-		msg += " path-re [" + query.PathRe + "]"
-	}
-	if len(query.RepoKeys) > 0 {
-		msg += " repo " + query.firstKey()
-	}
-	log.Info(msg)
-
 	resp := NewSearchResult()
 	irepo := s.repos.Get(query.firstKey())
 	if irepo == nil {
@@ -228,7 +216,6 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 			}
 			select {
 			case <-ctx.Done():
-				log.Debug("timed out")
 				return
 			default:
 			}
@@ -251,7 +238,6 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 
 	elapsed := time.Since(start)
 	resp.Elapsed = elapsed
-	log.Info("search [%v] finished %v", query.Re, elapsed)
 	return resp, err
 }
 

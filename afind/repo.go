@@ -3,7 +3,6 @@ package afind
 import (
 	"encoding/json"
 	"path"
-	"strconv"
 	"time"
 )
 
@@ -63,8 +62,7 @@ func (r *Repo) Host() string {
 func (r *Repo) Shards() []string {
 	shards := make([]string, r.NumShards)
 	for i := 0; i < r.NumShards; i++ {
-		fname := r.Key + "-" + strconv.Itoa(i) + ".afindex"
-		shards[i] = path.Join(r.IndexPath, fname)
+		shards[i] = path.Join(r.IndexPath, shardName(r.Key, i))
 	}
 	return shards
 }
@@ -134,6 +132,7 @@ func newRepoFromQuery(q *IndexQuery, ixpath string) *Repo {
 	repo := NewRepo()
 	repo.Key = q.Key
 	repo.Root = q.Root
+	log.Debug("new repo from query index path %v", ixpath)
 	repo.IndexPath = ixpath
 	for k, v := range q.Meta {
 		repo.Meta[k] = v

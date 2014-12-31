@@ -179,7 +179,7 @@ func shardName(key string, n int) string {
 	return key + "-" + strconv.Itoa(n) + ".afindex"
 }
 
-func (i *indexer) makeIndexShards(key string) {
+func (i *indexer) makeIndexShards(key, root string) {
 	// create index shards
 	numShards := i.cfg.NumShards
 	if numShards == 0 {
@@ -187,9 +187,9 @@ func (i *indexer) makeIndexShards(key string) {
 	}
 	numShards = utils.MinInt(numShards, maxShards)
 	i.shards = make([]index.IndexWriter, numShards)
-	log.Debug("index [%v] has %d shards", key, len(i.shards))
+	log.Debug("index [%v] creating %d shards in %s", key, len(i.shards), root)
 	for n := range i.shards {
-		name := shardName(key, n)
+		name := path.Join(root, shardName(key, n))
 		if i.writer == nil {
 			i.shards[n] = index.Create(name)
 		} else {
@@ -207,7 +207,7 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	start := time.Now()
 
 	if err = req.Normalize(); err != nil {
-		log.Info("index [%v] error: %v [%v]", req.Key, err, time.Since(start))
+		log.Info("index [%v] error: %v", req.Key, err)
 		return
 	}
 
@@ -225,7 +225,7 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	i.writer = getIndexWriter(ctx)
 
 	// create index shards and concurrently perform indexing
-	i.makeIndexShards(req.Key)
+	i.makeIndexShards(req.Key, root)
 	// Add query Files and scan Dirs for files to index
 	names, err := i.scanner(ctx, &req)
 	nshards := len(i.shards)

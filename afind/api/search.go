@@ -61,8 +61,7 @@ func (s *SearcherClient) Search(ctx context.Context, query afind.SearchQuery) (
 	return resp, err
 }
 
-// Search server (HTTP/RPC)
-
+// Common HTTP/GobRPC search server
 type searchServer struct {
 	cfg      *afind.Config
 	repos    afind.KeyValueStorer
@@ -83,59 +82,24 @@ func (s *searchServer) Search(args afind.SearchQuery,
 func (s *searchServer) webSearch(rw http.ResponseWriter, req *http.Request,
 	ps httprouter.Params) {
 
-	start := time.Now()
 	setJson(rw)
-
 	dec := json.NewDecoder(req.Body)
 	enc := json.NewEncoder(rw)
-
 	sr := afind.SearchQuery{}
-	resp := afind.NewSearchResult()
+	sr.Meta = make(afind.Meta)
+
+	// Parse the query
 	if err := dec.Decode(&sr); err != nil {
 		rw.WriteHeader(403)
 		_ = enc.Encode(
 			errs.NewStructError(errs.InvalidRequestError(err.Error())))
 		return
 	}
-	sr.Meta = make(afind.Meta)
-
 	// Allow single recursive query to perform master->backend resolution
 	sr.Recurse = true
 
-	// Get a request context
-	ctx, cancel := context.WithTimeout(
-		context.Background(), timeoutSearch(sr, s.cfg))
-	defer cancel()
-
-	// Determine which repos to search, then search in parallel
-	searchRepos := getRepos(s.repos, sr)
-	concurrency := len(searchRepos)
-	if concurrency > s.cfg.MaxSearchC {
-		concurrency = s.cfg.MaxSearchC
-	}
-	ch := make(chan *afind.SearchResult, len(searchRepos))
-	reqch := make(chan par.RequestFunc, len(searchRepos))
-	for _, repo := range searchRepos {
-		sr.RepoKeys = []string{repo.Key}
-		sr.Meta["host"] = repo.Host()
-		if isLocal(s.cfg, repo.Host()) {
-			reqch <- localSearch(s, sr, ch)
-		} else {
-			reqch <- remoteSearch(s, sr, ch)
-		}
-	}
-	close(reqch)
-
-	err := par.Requests(reqch).WithConcurrency(concurrency).DoWithContext(ctx)
-	close(ch)
-
-	// Merge the incoming results
-	for in := range ch {
-		resp.Update(in)
-	}
-	resp.Elapsed = time.Since(start)
-
-	if err == nil {
+	// Perform the search
+	if resp, err := doSearch(s, sr, timeoutSearch(sr, s.cfg)); err == nil {
 		rw.WriteHeader(200)
 		_ = enc.Encode(resp)
 	} else {
@@ -194,6 +158,15 @@ func timeoutSearch(req afind.SearchQuery, cfg *afind.Config) time.Duration {
 func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	resp *afind.SearchResult, err error) {
 
+	msg := "search [" + req.Re + "]"
+	if req.IgnoreCase {
+		msg += " ignore-case"
+	}
+	if req.PathRe != "" {
+		msg += " path-re [" + req.PathRe + "]"
+	}
+	log.Info(msg)
+
 	start := time.Now()
 	resp = afind.NewSearchResult()
 	// Get a request context
@@ -223,5 +196,11 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 		resp.Update(in)
 	}
 	resp.Elapsed = time.Since(start)
+	if resp.Error == "" {
+		msg = "done"
+	} else {
+		msg = "error"
+	}
+	log.Info("search [%s] %s %v", req.Re, msg, resp.Elapsed)
 	return
 }
