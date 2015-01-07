@@ -64,14 +64,10 @@ const (
 // Sets the error string on the IndexResult if the error passed is not
 // nil, else is a no-op.
 func (ir *IndexResult) SetError(err error) {
-	if err != nil {
-		switch err.(type) {
-		case *errs.StructError:
-			x := err.(*errs.StructError)
-			ir.Error = x
-		default:
-			ir.Error = errs.NewStructError(err)
-		}
+	if e, ok := err.(*errs.StructError); ok && e != nil {
+		ir.Error = e
+	} else if err != nil {
+		ir.Error = errs.NewStructError(err)
 	}
 }
 
@@ -213,19 +209,21 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 
 	log.Info("index [%v]", req.Key)
 	start := time.Now()
+	// Setup the response
+	resp = NewIndexResult()
 
 	if err = req.Normalize(); err != nil {
 		log.Info("index [%v] error: %v", req.Key, err)
+		resp.Error = err.(*errs.StructError)
 		return
 	}
 
 	root := getRoot(i.cfg, &req)
 	if err = os.MkdirAll(root, 0755); err != nil && !os.IsExist(err) {
+		resp.Error = errs.NewStructError(err)
 		return
 	}
 
-	// Setup the response
-	resp = NewIndexResult()
 	repo := newRepoFromQuery(&req, root)
 	repo.SetMeta(i.cfg.RepoMeta, req.Meta)
 	resp.Repo = repo
