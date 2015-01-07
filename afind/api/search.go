@@ -143,11 +143,18 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 		if err != nil {
 			sr.Errors[req.Meta.Host()] = errs.NewStructError(err)
 		}
+		// We may have timed out by now, in which case the results
+		// channel is closed, so check the deadline first.
 		select {
 		case <-ctx.Done():
+			log.Debug("debug timeout %v", ctx.Err())
+			sr.Error = ctx.Err().Error()
 			return nil
 		default:
+			log.Debug("debug hit default")
 		}
+		t, ok := ctx.Deadline()
+		log.Debug("debug ctx deadline %#v %#v", t, ok)
 		results <- sr
 		return nil
 	}
