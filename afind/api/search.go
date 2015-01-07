@@ -143,8 +143,12 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 		if err != nil {
 			sr.Errors[req.Meta.Host()] = errs.NewStructError(err)
 		}
-		results <- sr
-		return nil
+		select {
+		case <-ctx.Done():
+			return nil
+		case results <- sr:
+			return nil
+		}
 	}
 }
 
