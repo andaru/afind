@@ -17,7 +17,6 @@ func TestSearchResult(t *testing.T) {
 	r := NewSearchResult()
 	// these will panic with an uninit map error if
 	// the search result is not properly initialized
-	r.Errors["foo"] = ""
 	text := "// Copyright..."
 	r.addFileRepoMatches("filename.txt", "key1",
 		map[string]string{

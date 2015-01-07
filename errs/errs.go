@@ -170,6 +170,10 @@ func (e StructError) Type() string {
 	return e.T
 }
 
+func (e StructError) Message() string {
+	return e.M
+}
+
 func NewStructError(e error) *StructError {
 	switch e.(type) {
 	default:
