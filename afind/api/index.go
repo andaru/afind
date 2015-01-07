@@ -107,9 +107,10 @@ func remoteIndex(s *indexServer, req afind.IndexQuery,
 		select {
 		case <-ctx.Done():
 			return nil
-		case results <- ir:
-			return nil
+		default:
 		}
+		results <- ir
+		return nil
 	}
 }
 

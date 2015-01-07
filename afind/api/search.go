@@ -146,9 +146,10 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 		select {
 		case <-ctx.Done():
 			return nil
-		case results <- sr:
-			return nil
+		default:
 		}
+		results <- sr
+		return nil
 	}
 }
 
