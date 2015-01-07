@@ -369,7 +369,11 @@ func printErrors(sr *afind.SearchResult) {
 	for key, err := range sr.Errors {
 		if err != (*errs.StructError)(nil) {
 			pfirst()
-			fmt.Printf("repo %s [%s] %s\n", key, err.Type(), err.Error())
+			fmt.Printf("repo %s [%s]", key, err.Type())
+			if err.Message() != "" {
+				fmt.Printf(" %s", err.Message())
+			}
+			fmt.Println("")
 		}
 	}
 	if sr.Error != "" {
