@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/rpc"
 	"time"
@@ -71,12 +70,12 @@ func (s *indexServer) webIndex(rw http.ResponseWriter, req *http.Request,
 	timeout := timeoutIndex(q, s.cfg)
 	ir, err := doIndex(s, q, timeout)
 
-	if ir.Error != "" {
+	if ir.Error != nil {
 		rw.WriteHeader(500)
-		_ = enc.Encode(errs.StructError{T: "index", M: ir.Error})
+		_ = enc.Encode(ir.Error)
 	} else if err != nil {
 		rw.WriteHeader(500)
-		_ = enc.Encode(errs.StructError{T: "index", M: err.Error()})
+		_ = enc.Encode(errs.NewStructError(err))
 	} else {
 		rw.WriteHeader(200)
 		_ = enc.Encode(ir)
@@ -137,6 +136,12 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 		}
 	}
 
+	// Set a marker repo in the store, indicating we're presently indexing
+	tmprepo := afind.NewRepo()
+	tmprepo.Key = req.Key
+	tmprepo.State = afind.INDEXING
+	_ = s.repos.Set(req.Key, tmprepo)
+
 	// setup a request context
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -156,11 +161,15 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 		err = par.Requests(reqch).DoWithContext(ctx)
 		close(ch)
 		resp = <-ch
-		if resp.Error != "" {
-			err = errors.New(resp.Error)
-		} else if resp.Repo != nil {
-			// update the repo store if the response is good
-			err = s.repos.Set(resp.Repo.Key, resp.Repo)
+		if resp.Error != nil {
+			err = resp.Error
+		}
+		// Set the repo if we have one in the response
+		if resp.Repo != nil {
+			_ = s.repos.Set(resp.Repo.Key, resp.Repo)
+		} else {
+			// Delete the temporary indexing repo
+			s.repos.Delete(req.Key)
 		}
 	} else {
 		// neither a local query or a recursive query,

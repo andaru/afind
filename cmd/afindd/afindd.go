@@ -48,7 +48,6 @@ func getConfig() afind.Config {
 	}
 	c.SetVerbose(*flagVerbose)
 	c.Host()
-	log.Debug("timeouts: index %v, search %v", c.GetTimeoutIndex(), c.GetTimeoutSearch())
 	return c
 }
 

@@ -53,8 +53,8 @@ type IndexQuery struct {
 // If Error is not empty, an error occured, else the request was
 // successful.
 type IndexResult struct {
-	Repo  *Repo  `json:"repo"`
-	Error string `json:"error,omitempty"`
+	Repo  *Repo             `json:"repo"`
+	Error *errs.StructError `json:"error,omitempty"`
 }
 
 const (
@@ -65,7 +65,13 @@ const (
 // nil, else is a no-op.
 func (ir *IndexResult) SetError(err error) {
 	if err != nil {
-		ir.Error = err.Error()
+		switch err.(type) {
+		case *errs.StructError:
+			x := err.(*errs.StructError)
+			ir.Error = x
+		default:
+			ir.Error = errs.NewStructError(err)
+		}
 	}
 }
 
@@ -84,7 +90,9 @@ func NewIndexQuery(key string) IndexQuery {
 // Normalize validates and moralizes the IndexQuery
 func (r *IndexQuery) Normalize() error {
 	// Validate
-	if len(r.Dirs) == 0 {
+	if r.Key == "" {
+		return errs.NewValueError("key", "Key must not be empty")
+	} else if len(r.Dirs) == 0 {
 		return errs.NewValueError(
 			"dirs",
 			"Must provide one one more sub dirs (such as [`.`])")
@@ -262,8 +270,8 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	var msg string
 	if err != nil {
 		repo.State = ERROR
-		resp.Error = err.Error()
-		msg = "error: " + resp.Error
+		resp.SetError(err)
+		msg = "error: " + resp.Error.Error()
 	} else {
 		repo.State = OK
 		msg = "ok"

@@ -115,7 +115,7 @@ func localSearch(s *searchServer, req afind.SearchQuery,
 		sr, err := s.searcher.Search(ctx, req)
 		if err != nil {
 			if len(req.RepoKeys) > 0 {
-				sr.Errors[req.RepoKeys[0]] = err.Error()
+				sr.Errors[req.RepoKeys[0]] = errs.NewStructError(err)
 			} else {
 				sr.Error = err.Error()
 			}
@@ -141,7 +141,7 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 			sr, err = NewSearcherClient(cl).Search(ctx, req)
 		}
 		if err != nil {
-			sr.Errors[req.Meta.Host()] = err.Error()
+			sr.Errors[req.Meta.Host()] = errs.NewStructError(err)
 		}
 		results <- sr
 		return nil

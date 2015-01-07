@@ -48,18 +48,18 @@ func IsValueError(e error) bool {
 }
 
 // No specific repos found when requesting some subset of repos
-type NoRepoFoundError struct{}
+type RepoUnavailableError struct{}
 
-func NewNoRepoFoundError() *NoRepoFoundError {
-	return &NoRepoFoundError{}
+func NewRepoUnavailableError() *RepoUnavailableError {
+	return &RepoUnavailableError{}
 }
 
-func (e NoRepoFoundError) Error() string {
-	return "No Repo found"
+func (e RepoUnavailableError) Error() string {
+	return "Repo not available"
 }
 
-func IsNoRepoFoundError(e error) bool {
-	if _, ok := e.(*NoRepoFoundError); ok {
+func IsRepoUnavailableError(e error) bool {
+	if _, ok := e.(*RepoUnavailableError); ok {
 		return true
 	}
 	return false
@@ -110,8 +110,9 @@ func IsTimeoutError(e error) bool {
 // An unexpected internal error occured
 type InternalError string
 
-func NewInternalError(s string) InternalError {
-	return InternalError(s)
+func NewInternalError(s string) *InternalError {
+	err := InternalError(s)
+	return &err
 }
 
 func (e InternalError) Error() string {
@@ -128,8 +129,9 @@ func IsInternalError(e error) bool {
 // An unexpected internal error occured
 type InvalidRequestError string
 
-func NewInvalidRequestError(s string) InvalidRequestError {
-	return InvalidRequestError(s)
+func NewInvalidRequestError(s string) *InvalidRequestError {
+	err := InvalidRequestError(s)
+	return &err
 }
 
 func (e InvalidRequestError) Error() string {
@@ -146,7 +148,7 @@ func IsInvalidRequestError(e error) bool {
 // Structured errors for JSON/etc interfaces
 // where 'error' does not marshal.
 type StructError struct {
-	T string `json:"type,omitempty"`
+	T string `json:"type"`
 	M string `json:"message,omitempty"`
 }
 
@@ -164,17 +166,23 @@ func (e StructError) Error() string {
 	return s
 }
 
+func (e StructError) Type() string {
+	return e.T
+}
+
 func NewStructError(e error) *StructError {
 	switch e.(type) {
 	default:
-		return &StructError{"other", e.Error()}
+		return &StructError{"unknown_error", e.Error()}
+	case *InternalError:
+		return &StructError{"internal_error", e.Error()}
 	case *InvalidRequestError:
 		return &StructError{"invalid_request", e.Error()}
 	case *TimeoutError:
 		return &StructError{"timeout", e.Error()}
 	case *NoRpcClientError:
 		return &StructError{"rpc_client_unavailable", e.Error()}
-	case *NoRepoFoundError:
+	case *RepoUnavailableError:
 		return &StructError{"no_repo_found", e.Error()}
 	case *RepoExistsError:
 		return &StructError{"repo_exists", e.Error()}

@@ -92,20 +92,19 @@ type matchMap map[string]repoMatchMap
 // concurrent results. The results are unranked.
 type SearchResult struct {
 	// Matches per file, repo key and line number to text of lines matching
-	Matches map[string]map[string]map[string]string `json:"matches"`
-
-	Errors      map[string]string `json:"errors,omitempty"` // Per repo errors
-	Error       string            `json:"error,omitempty"`  // Any global error
-	NumMatches  int64             `json:"num_matches"`      // Search hit count
-	Elapsed     time.Duration     `json:"elapsed_total"`    // Whole search time
-	ElapsedPost time.Duration     `json:"elapsed_posting"`  // Posting query time
+	Matches     map[string]map[string]map[string]string `json:"matches"`
+	Errors      map[string]*errs.StructError            `json:"errors,omitempty"` // Per repo errors
+	Error       string                                  `json:"error,omitempty"`  // Any global error
+	NumMatches  int64                                   `json:"num_matches"`      // Search hit count
+	Elapsed     time.Duration                           `json:"elapsed_total"`    // Whole search time
+	ElapsedPost time.Duration                           `json:"elapsed_posting"`  // Posting query time
 }
 
 // Returns a pointer to an initialized search Result.
 func NewSearchResult() *SearchResult {
 	return &SearchResult{
 		Matches: make(map[string]map[string]map[string]string),
-		Errors:  make(map[string]string),
+		Errors:  make(map[string]*errs.StructError),
 	}
 }
 
@@ -139,7 +138,7 @@ func (r *SearchResult) Update(other *SearchResult) {
 	}
 	if r.Error == "" {
 		r.Error = other.Error
-	} else {
+	} else if other.Error != "" {
 		// Append unique messages to the global error string
 		if r.Error != other.Error {
 			r.Error += "\n" + other.Error
@@ -186,15 +185,19 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 
 	start := time.Now()
 	resp := NewSearchResult()
-	irepo := s.repos.Get(query.firstKey())
-	if irepo == nil {
-		return resp, errs.NewNoRepoFoundError()
-	}
-	repo := irepo.(*Repo)
 
-	// If the repo is not ok, it's unavailable, so exit early.
-	if repo.State != OK {
-		return resp, errs.NewNoRepoFoundError()
+	// If the repo is not found or is not available to search,
+	// exit with a RepoUnavailable error.
+	var repo *Repo
+	repokey := query.firstKey()
+	if irepo := s.repos.Get(repokey); irepo == nil {
+		resp.Errors[repokey] = errs.NewStructError(
+			errs.NewRepoUnavailableError())
+		return resp, nil
+	} else if repo = irepo.(*Repo); repo.State != OK {
+		resp.Errors[repokey] = errs.NewStructError(
+			errs.NewRepoUnavailableError())
+		return resp, nil
 	}
 
 	shards := repo.Shards()
@@ -223,6 +226,7 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 		}(repo, shard)
 	}
 
+	// Collect and merge errors
 	var err error
 	for left > 0 {
 		select {

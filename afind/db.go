@@ -57,10 +57,6 @@ func (d *db) read() error {
 	if err == nil {
 		d.bs = file
 	} else {
-		if !os.IsNotExist(err) {
-			log.Debug("read error: %v", err)
-			return nil
-		}
 		return err
 	}
 	dec := json.NewDecoder(d.bs)
@@ -69,7 +65,6 @@ func (d *db) read() error {
 
 func (d *db) close() error {
 	if err := d.flush(); err != nil {
-		log.Critical("failed to flush backing store: %v", err.Error())
 		return err
 	} else {
 		_ = d.bs.Close()
@@ -167,7 +162,7 @@ func newJsonBackedDb(filename string) *db {
 		log.Info("Loaded database (%d repos; %s data/%s index)",
 			len(newDb.R), sizeData, sizeIndex)
 	} else {
-		log.Info("Starting with fresh backing store (due to: %v)", err)
+		log.Warning("Starting with fresh backing store: %v", err)
 	}
 	return newDb
 }

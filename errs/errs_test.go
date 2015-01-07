@@ -1,6 +1,7 @@
 package errs
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -13,13 +14,15 @@ func TestStructErrorType(t *testing.T) {
 			t.Errorf("got error type %v, want %v", err.T, expType)
 		}
 	}
+	check(NewInternalError("thing"), "internal_error")
+	check(NewInvalidRequestError("thing"), "invalid_request")
 	check(NewTimeoutError("thing"), "timeout")
 	check(NewTimeoutError(""), "timeout")
-	check(NewNoRepoFoundError(), "no_repo_found")
+	check(NewRepoUnavailableError(), "no_repo_found")
 	check(NewNoRpcClientError(), "rpc_client_unavailable")
 	check(NewRepoExistsError("repo_key"), "repo_exists")
 	check(NewValueError("argument", "msg"), "value_error")
-	check(errors.New("yeehaw"), "other")
+	check(errors.New("yeehaw"), "unknown_error")
 }
 
 func TestErrorString(t *testing.T) {
@@ -30,10 +33,10 @@ func TestErrorString(t *testing.T) {
 				substr, err.Error())
 		}
 	}
-	check(NewNoRepoFoundError(), "no_repo_found: No Repo found")
+	check(NewRepoUnavailableError(), "no_repo_found: Repo not available")
 	check(NewValueError("argument", "msg"),
 		"value_error: Argument 'argument' value is invalid: msg")
-	check(errors.New("foo"), "other: foo")
+	check(errors.New("foo"), "unknown_error: foo")
 }
 
 func TestErrorIs(t *testing.T) {
@@ -64,11 +67,11 @@ func TestErrorIs(t *testing.T) {
 		t.Error("got afind error type for an errors.New()")
 	}
 
-	err = NewNoRepoFoundError()
-	if !IsNoRepoFoundError(err) {
+	err = NewRepoUnavailableError()
+	if !IsRepoUnavailableError(err) {
 		t.Error("got unexpected error type")
 	}
-	if IsNoRepoFoundError(basicerr) {
+	if IsRepoUnavailableError(basicerr) {
 		t.Error("got afind error type for an errors.New()")
 	}
 
@@ -79,4 +82,46 @@ func TestErrorIs(t *testing.T) {
 	if IsTimeoutError(basicerr) {
 		t.Error("got afind error type for an errors.New()")
 	}
+
+	err = NewInternalError("thing")
+	if !IsInternalError(err) {
+		t.Error("got unexpected error type")
+	}
+	if IsInternalError(basicerr) {
+		t.Error("got afind error type for an errors.New()")
+	}
+
+	err = NewInvalidRequestError("thing")
+	if !IsInvalidRequestError(err) {
+		t.Error("got unexpected error type")
+	}
+	if IsInvalidRequestError(basicerr) {
+		t.Error("got afind error type for an errors.New()")
+	}
+
+}
+
+func TestStructErrorAsJson(t *testing.T) {
+	check := func(e *StructError, expected string) {
+		if b, err := json.Marshal(e); err != nil {
+			t.Errorf("want no error, got %v", err)
+		} else if string(b) != expected {
+			t.Errorf("want %s, got %s", expected, string(b))
+		}
+	}
+
+	check(NewStructError(NewInvalidRequestError("bar")),
+		`{"type":"invalid_request","message":"bar"}`)
+	check(NewStructError(NewInternalError("foo")),
+		`{"type":"internal_error","message":"foo"}`)
+	check(NewStructError(NewRepoUnavailableError()),
+		`{"type":"no_repo_found","message":"Repo not available"}`)
+	check(NewStructError(NewNoRpcClientError()),
+		`{"type":"rpc_client_unavailable","message":"No local RPC client to perform remote requests"}`)
+	check(NewStructError(NewRepoExistsError("key")),
+		`{"type":"repo_exists","message":"Cannot replace existing repository with key 'key'"}`)
+	check(NewStructError(NewTimeoutError("foo")),
+		`{"type":"timeout","message":"timed out waiting for foo"}`)
+	check(NewStructError(NewValueError("a", "b")),
+		`{"type":"value_error","message":"Argument 'a' value is invalid: b"}`)
 }

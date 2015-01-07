@@ -138,4 +138,7 @@ func TestDbBadCases(t *testing.T) {
 	if v := d.close(); v == nil {
 		t.Error("want error from d.close(), got nil")
 	}
+	if v := d.flush(); v == nil {
+		t.Error("want error from d.flush(), got nil")
+	}
 }

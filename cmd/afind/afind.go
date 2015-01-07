@@ -13,6 +13,7 @@ import (
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/afind"
 	"github.com/andaru/afind/afind/api"
+	"github.com/andaru/afind/errs"
 	"github.com/andaru/afind/flags"
 	"github.com/andaru/afind/utils"
 )
@@ -197,9 +198,11 @@ func search(c *ctx, query string) error {
 	request.Recurse = true
 	request.Context = getSearchContext()
 	sr, err := c.searcher.Search(context.Background(), request)
-	if err == nil && sr.Error == "" {
-		printMatches(sr)
-	}
+	// now print the matches
+	printMatches(sr)
+	// print per repo errors, if any were found
+	printErrors(sr)
+
 	if sr.Error != "" {
 		err = errors.New(sr.Error)
 	}
@@ -218,11 +221,15 @@ func index(c *ctx, key, root string, subdirs []string) error {
 	if ir.Repo != nil {
 		fmt.Printf("index [%s] done in %v\n",
 			ir.Repo.Key, ir.Repo.ElapsedIndexing)
+	} else if err != nil {
+		return err
 	}
-	if ir.Error != "" {
-		err = errors.New(ir.Error)
+	// Compare the error value to nil in its type, return the
+	// error if so.
+	if ir.Error != (*errs.StructError)(nil) {
+		return ir.Error
 	}
-	return err
+	return nil
 }
 
 func repoAsString(r *afind.Repo) string {
@@ -351,6 +358,26 @@ func printMatches(sr *afind.SearchResult) {
 	}
 }
 
+func printErrors(sr *afind.SearchResult) {
+	first := true
+	pfirst := func() {
+		if first {
+			fmt.Println("Errors:")
+			first = false
+		}
+	}
+	for key, err := range sr.Errors {
+		if err != (*errs.StructError)(nil) {
+			pfirst()
+			fmt.Printf("repo %s [%s] %s\n", key, err.Type(), err.Error())
+		}
+	}
+	if sr.Error != "" {
+		pfirst()
+		fmt.Println(sr.Error)
+	}
+}
+
 func main() {
 	flag.Parse()
 
@@ -361,7 +388,7 @@ func main() {
 	}
 	err := doAfind()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %#v\n", err)
 		os.Exit(1)
 	}
 }
