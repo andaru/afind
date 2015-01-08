@@ -58,9 +58,9 @@ func usage() {
 	fmt.Println(`afind : distributed text search
 
 Usage:
-  afind <command> [-options] <operation arguments...>
+  afind [global options] <command> [command options] <arguments..>
 
-Available commands (try 'afind <command> -h'):
+Available commands (for command options, see 'afind <command> -h'):
 
   index      Index text, creating a Repo (repository)
   search     Search for text in one more or all Repo
@@ -75,13 +75,13 @@ func usageIndex() {
 	fmt.Fprintln(os.Stderr, `afind index : create repositories of indexed text
 
 Usage:
-  afind index [-D k1=v1,k2=v2,...] <key> <root> <dirN> <dirN..>
+  afind index [options] <key> <root> <dirN> [dirN..]
 
 Where:
   key     Unique key for this Repo
   root    The absolute path to the root of the Repo
   dirN    One or more sub directories of root.
-          To index all of root, use the single dir '.'
+          To index everything under root, just use '.'
 
 Options:`)
 	flagSetIndex.PrintDefaults()
@@ -91,7 +91,7 @@ func usageRepos() {
 	fmt.Fprintln(os.Stderr, `afind repos : display and delete repositories
 
 Usage:
-  afind repos [-D] [key] [key...]
+  afind repos [-D] [key] [key..]
 
 If a single key only is provided, -D will delete that repository.
 Otherwise, details about the one repository are displayed.  If key is
