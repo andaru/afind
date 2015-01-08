@@ -117,10 +117,12 @@ Options:`)
 }
 
 func init() {
-	flag.Var(&flagKeys, "key",
+	flagSetSearch.Var(&flagKeys, "key",
 		"Search just this comma-separated list of repository keys")
-	flagSetIndex.Var(&flagMeta, "D",
-		"A key=value pair to add to index or search request metadata")
+	flagSetSearch.Var(&flagMeta, "m",
+		"A key value pair found in Repo to search")
+	flagSetIndex.Var(&flagMeta, "m",
+		"A key value pair added to merge with query Repo metadata when indexed")
 	flag.Usage = usage
 	flagSetSearch.Usage = usageSearch
 	flagSetIndex.Usage = usageIndex
