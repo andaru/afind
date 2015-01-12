@@ -7,7 +7,7 @@ import (
 )
 
 func TestByteSize(t *testing.T) {
-	check := func(nb int, exp string) {
+	check := func(nb uint64, exp string) {
 		bs := ByteSize(nb)
 		if bs.String() != exp {
 			t.Errorf("%v bytes: got %v, want %v", nb, bs.String(), exp)
