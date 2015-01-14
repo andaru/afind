@@ -3,6 +3,7 @@ package api
 import (
 	"github.com/andaru/afind/afind"
 	"github.com/andaru/afind/utils"
+	"strings"
 )
 
 // baseServer is the base server implementation, carrying the Register*
@@ -27,6 +28,8 @@ var (
 	localHostnames = map[string]interface{}{
 		"":          nil,
 		"localhost": nil,
+		// other hosts in 127/8 are not considered local,
+		// allowing one host to test distributed requests
 		"127.0.0.1": nil,
 		"::1":       nil,
 	}
@@ -36,7 +39,11 @@ var (
 func isLocal(config *afind.Config, h string) bool {
 	if _, ok := localHostnames[h]; ok {
 		return true
-	} else if config.Host() == h {
+	} else if h == config.Host() {
+		return true
+	} else if strings.HasPrefix(config.Host(), h+".") {
+		// allow the local domain to be stripped from repo
+		// metadata and still match locally.
 		return true
 	}
 	return false

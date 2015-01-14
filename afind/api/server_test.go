@@ -51,6 +51,18 @@ func TestIsLocal(t *testing.T) {
 	assertTrue(config, "localhost")
 	assertFalse(config, "bs123")
 	assertTrue(config, "testhost")
+
+	// A host prefix will also work, to allow for systems that strip
+	// the trailing part of the domain name. For example, the domain
+	// example.com is being stripped in the setup below.
+	config.RepoMeta["host"] = "testhost.location.example.com"
+	assertTrue(config, "testhost.location")
+
+	// Confirm some edge cases work as we expect.
+	// 1. A supplied host only matches the configured host if it
+	// is still matches when suffixed with a '.' (as above)
+	config.RepoMeta["host"] = "testhost.locationrunson"
+	assertFalse(config, "testhost.location")
 }
 
 func TestGetAddress(t *testing.T) {
