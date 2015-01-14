@@ -195,9 +195,9 @@ func search(c *ctx, query string) error {
 		IgnoreCase: *flagSearchInsens,
 		RepoKeys:   flagKeys,
 		Meta:       afind.Meta(flagMeta),
+		Recurse:    true,
 		// Timeout:    time.Duration(*flagTimeoutSearch) * time.Second,
 	}
-	request.Recurse = true
 	request.Context = getSearchContext()
 	sr, err := c.searcher.Search(context.Background(), request)
 	// now print the matches
@@ -236,11 +236,14 @@ func index(c *ctx, key, root string, subdirs []string) error {
 
 func repoAsString(r *afind.Repo) string {
 	// convert the metadata to a json object style
-	meta := "{"
-	for k, v := range r.Meta {
-		meta += k + `:` + ` "` + v + `", `
+	meta := "{}"
+	if len(r.Meta) > 0 {
+		meta = "{"
+		for k, v := range r.Meta {
+			meta += k + `:` + ` "` + v + `", `
+		}
+		meta = meta[:len(meta)-2] + "}"
 	}
-	meta = meta[:len(meta)-2] + "}"
 
 	return (fmt.Sprintf("repo: %s [%s]\n", r.Key, r.State) +
 		fmt.Sprintf("  last updated: %v\n", r.TimeUpdated) +

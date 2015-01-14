@@ -124,12 +124,10 @@ func timeoutIndex(req afind.IndexQuery, cfg *afind.Config) time.Duration {
 func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 	resp *afind.IndexResult, err error) {
 
-	resp = afind.NewIndexResult()
-	log.Debug("index [%s] request root=%v num_dirs=%d num_files=%d root=%v timeout=%v",
-		req.Key, req.Root, len(req.Dirs), len(req.Files), req.Timeout)
-
-	resp = afind.NewIndexResult()
 	local := isLocal(s.cfg, req.Meta.Host())
+	resp = afind.NewIndexResult()
+	log.Debug("index [%s] request %#v local=%v", req.Key, req, local)
+	resp = afind.NewIndexResult()
 
 	// Duplicate request handling: if this is a remote indexing
 	// request and we've got a recent matching Repo for that key
@@ -145,6 +143,8 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 	tmprepo := afind.NewRepo()
 	tmprepo.Key = req.Key
 	tmprepo.State = afind.INDEXING
+	tmprepo.Root = req.Root
+	tmprepo.Meta.Update(req.Meta)
 	_ = s.repos.Set(req.Key, tmprepo)
 
 	// setup a request context
@@ -174,14 +174,16 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 			_ = s.repos.Set(resp.Repo.Key, resp.Repo)
 		} else {
 			// Delete the temporary indexing repo
-			s.repos.Delete(req.Key)
+			_ = s.repos.Delete(req.Key)
 		}
 	} else {
 		// neither a local query or a recursive query,
 		// so this presumably once recursive query
 		// has looped, meaning we cannot resolve an
 		// appropriate backend.
+		log.Debug("unservicable IndexQuery %#v local=%v", req, local)
 		err = errs.NewNoRpcClientError()
+		_ = s.repos.Delete(req.Key)
 	}
 	return
 }
