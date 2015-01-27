@@ -39,6 +39,22 @@ func TestErrorString(t *testing.T) {
 	check(errors.New("foo"), "unknown_error: foo")
 }
 
+func TestErrorTypeMessage(t *testing.T) {
+	check := func(e error, expType, expMessage string) {
+		err := NewStructError(e)
+		if !strings.Contains(err.Type(), expType) {
+			t.Errorf("want type %v, got %v", expType, err.Type())
+		}
+		if !strings.Contains(err.Message(), expMessage) {
+			t.Errorf("want message %v, got %v", expMessage, err.Message())
+		}
+	}
+	check(NewRepoUnavailableError(), "no_repo_found", "Repo not available")
+	check(NewValueError("argument", "msg"),
+		"value_error", "Argument 'argument' value is invalid: msg")
+	check(errors.New("foo"), "unknown_error", "foo")
+}
+
 func TestErrorIs(t *testing.T) {
 	basicerr := errors.New("")
 	var err error

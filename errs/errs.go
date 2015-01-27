@@ -1,5 +1,9 @@
 package errs
 
+import (
+	"net"
+)
+
 // Error types
 
 const (
@@ -176,8 +180,8 @@ func (e StructError) Message() string {
 
 func NewStructError(e error) *StructError {
 	switch e.(type) {
-	default:
-		return &StructError{"unknown_error", e.Error()}
+	case net.Error:
+		return &StructError{"network_error", e.Error()}
 	case *InternalError:
 		return &StructError{"internal_error", e.Error()}
 	case *InvalidRequestError:
@@ -192,5 +196,7 @@ func NewStructError(e error) *StructError {
 		return &StructError{"repo_exists", e.Error()}
 	case *ValueError:
 		return &StructError{"value_error", e.Error()}
+	default:
+		return &StructError{"unknown_error", e.Error()}
 	}
 }
