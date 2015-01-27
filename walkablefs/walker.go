@@ -8,10 +8,15 @@ import (
 	"golang.org/x/tools/godoc/vfs"
 )
 
+// Walker is the os.Walk interface
+type Walker interface {
+	Walk(root string, walkFn filepath.WalkFunc) error
+}
+
 // WalkableFileSystem provides the standard filepath.Walk interface
 type WalkableFileSystem interface {
 	vfs.FileSystem
-	Walk(root string, walkFn filepath.WalkFunc) error
+	Walker
 }
 
 // New returns the passed vfs.FileSystem back
