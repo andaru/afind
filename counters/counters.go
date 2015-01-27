@@ -20,7 +20,7 @@ type ctrGet struct {
 	channel chan uint64
 }
 
-type counters struct {
+type Counters struct {
 	ctr      ctrmap
 	chGet    chan ctrGet
 	chGetAll chan chan ctrmap
@@ -30,8 +30,8 @@ type counters struct {
 
 // New creates a new concurrent safe counter map, with string
 // keys and uint64 values.
-func New() *counters {
-	return &counters{
+func New() *Counters {
+	return &Counters{
 		ctr:      make(ctrmap),
 		chGet:    make(chan ctrGet, chGetDepth),
 		chGetAll: make(chan chan ctrmap, chGetAllDepth),
@@ -40,18 +40,18 @@ func New() *counters {
 	}
 }
 
-// Start starts a counters instance.
+// Start starts a Counters instance.
 // As it returns itself, it can be started immediately after creation
 // if desired, like so:
 //   ctrs := counters.New().Start()
-func (c *counters) Start() *counters {
+func (c *Counters) Start() *Counters {
 	go c.loop()
 	return c
 }
 
 // Get returns an individual counter value.
 // Non existant keys return the default value, zero.
-func (c *counters) Get(key string) uint64 {
+func (c *Counters) Get(key string) uint64 {
 	if key == "" {
 		return 0
 	}
@@ -62,7 +62,7 @@ func (c *counters) Get(key string) uint64 {
 
 // Inc increments a key by amount.
 // New keys have an initial default value of zero.
-func (c *counters) Inc(key string, amount uint64) {
+func (c *Counters) Inc(key string, amount uint64) {
 	if key != "" && amount > 0 {
 		request := ctrInc{key: key, value: amount}
 		c.chInc <- request
@@ -70,13 +70,13 @@ func (c *counters) Inc(key string, amount uint64) {
 }
 
 // GetAll returns the entire counter map
-func (c *counters) GetAll() ctrmap {
+func (c *Counters) GetAll() ctrmap {
 	reply := make(chan ctrmap)
 	c.chGetAll <- reply
 	return <-reply
 }
 
-func (c *counters) Close() error {
+func (c *Counters) Close() error {
 	ch := make(chan error)
 	go func() {
 		c.chQuit <- ch
@@ -84,7 +84,7 @@ func (c *counters) Close() error {
 	return <-ch
 }
 
-func (c *counters) loop() {
+func (c *Counters) loop() {
 	for {
 		// only handle closure once per iteration
 		select {
@@ -126,7 +126,7 @@ func (c *counters) loop() {
 	}
 }
 
-func (c *counters) close() {
+func (c *Counters) close() {
 	close(c.chGet)
 	close(c.chGetAll)
 	close(c.chInc)
