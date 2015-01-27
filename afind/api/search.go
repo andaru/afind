@@ -26,10 +26,9 @@ func (s *SearcherClient) Close() error {
 	return s.client.Close()
 }
 
-// returns a list of repos relevant to this search given a service
+// returns a slice of Repo relevant to this search query
 func getRepos(rstore afind.KeyValueStorer, request afind.SearchQuery) []*afind.Repo {
 
-	// Select repos to search
 	repos := make([]*afind.Repo, 0)
 
 	// Select requested repo keys from the database
@@ -39,11 +38,19 @@ func getRepos(rstore afind.KeyValueStorer, request afind.SearchQuery) []*afind.R
 		}
 	}
 
-	// Otherwise, select all repos (optionally matching the metadata)
+	// Otherwise, filter all Repo by the request Metadata. Values in the Meta
+	// can be considered regular expressions, if request.MetaRegexpMatch is set.
+	// If not set, Meta values are treated as exact strings to filter for. Only
+	// matching keys are considered, so filters that do not appear in the Repo
+	// pass the filter.
 	if len(request.RepoKeys) == 0 {
 		rstore.ForEach(func(key string, value interface{}) bool {
 			r := value.(*afind.Repo)
-			if r.Meta.Matches(request.Meta) {
+			if !request.MetaRegexpMatch && r.Meta.Matches(request.Meta) {
+				// Exact string match
+				repos = append(repos, r)
+			} else if request.MetaRegexpMatch && r.Meta.MatchesRegexp(request.Meta) {
+				// Regular expression match
 				repos = append(repos, r)
 			}
 			return true
@@ -124,8 +131,8 @@ func localSearch(s *searchServer, req afind.SearchQuery,
 		case <-ctx.Done():
 			return nil
 		default:
+			results <- sr
 		}
-		results <- sr
 		return nil
 	}
 }
@@ -145,12 +152,13 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 		if err != nil {
 			sr.Errors[req.Meta.Host()] = errs.NewStructError(err)
 		}
+
 		select {
 		case <-ctx.Done():
 			return nil
 		default:
+			results <- sr
 		}
-		results <- sr
 		return nil
 	}
 }
@@ -176,6 +184,7 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 
 	start := time.Now()
 	resp = afind.NewSearchResult()
+	resp.MaxMatches = req.MaxMatches
 	// Get a request context
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

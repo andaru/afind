@@ -3,6 +3,8 @@ package afind
 import (
 	"encoding/json"
 	"path"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -119,6 +121,39 @@ func (m Meta) Matches(other Meta) bool {
 	return true
 }
 
+// MatchesRegexp matches other metadata by regular expressions.
+// Scanning of the metadata is a per the Matches function, but
+// the value string of other is considered to a regular expression
+// to match. If the first rune of the value string is '!', the
+// remaining expression must not match. This means that each key
+// of other is either a match or not match filter.
+func (m Meta) MatchesRegexp(other Meta) bool {
+	var err error
+	for k, v := range m {
+		var reg *regexp.Regexp
+		var nomatch bool
+
+		// Build the match expression for this key
+		ov := other[k]
+		if strings.HasPrefix(ov, "!") {
+			nomatch = true
+			reg, err = regexp.Compile(ov[1:])
+		} else if ov != "" {
+			reg, err = regexp.Compile(ov)
+		}
+		if err != nil || reg == nil {
+			// no valid regexp, skip this key
+			continue
+		}
+		if nomatch && reg.MatchString(v) {
+			return false
+		} else if !nomatch && !reg.MatchString(v) {
+			return false
+		}
+	}
+	return true
+}
+
 // Updates this metadata from some other metadata
 func (m Meta) Update(other Meta) {
 	for k, v := range other {
@@ -132,7 +167,6 @@ func newRepoFromQuery(q *IndexQuery, ixpath string) *Repo {
 	repo := NewRepo()
 	repo.Key = q.Key
 	repo.Root = q.Root
-	log.Debug("new repo from query index path %v", ixpath)
 	repo.IndexPath = ixpath
 	for k, v := range q.Meta {
 		repo.Meta[k] = v

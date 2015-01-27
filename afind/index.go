@@ -1,7 +1,7 @@
 package afind
 
 import (
-	"io"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -12,8 +12,10 @@ import (
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/errs"
 	"github.com/andaru/afind/utils"
+	"github.com/andaru/afind/walkablefs"
 	"github.com/andaru/codesearch/index"
 	"github.com/savaki/par"
+	"golang.org/x/tools/godoc/vfs"
 )
 
 // An Indexer can index text sources for a single Repo each request
@@ -96,13 +98,26 @@ func (r *IndexQuery) Normalize() error {
 		return errs.NewValueError(
 			"root", "Root must be an absolute path")
 	}
-	// Confirm all sub directories provided are not absolute
+	// Confirm all sub directories provided are not absolute, and remove
+	// any duplicate paths to avoid duplicate indexing of files.
+	seen := map[string]struct{}{}
 	for _, dir := range r.Dirs {
 		if path.IsAbs(dir) {
 			return errs.NewValueError(
 				"dirs", "Dirs must not be absolute paths")
 		}
+		// We require a relative path, but FileSystem uses a rooted
+		// path, so '.' needs to be seen as '/'.
+		if dir == "." {
+			dir = "/"
+		}
+		seen[dir] = struct{}{}
 	}
+	dirs := []string{}
+	for dir, _ := range seen {
+		dirs = append(dirs, dir)
+	}
+	r.Dirs = dirs
 	return nil
 }
 
@@ -115,17 +130,20 @@ func NewIndexResult() *IndexResult {
 
 // indexer carries our private Indexer implementation
 type indexer struct {
-	cfg     *Config
-	shards  []index.IndexWriter
-	repos   KeyValueStorer
-	sourcer readerSourcer
-	writer  index.IndexWriter // template, used for shards
-	names   chan string
+	cfg    *Config
+	shards []index.IndexWriter
+	root   string // normalized root directory
+	repos  KeyValueStorer
+	writer index.IndexWriter
+	names  chan string
 }
 
 // NewIndexer returns a new Indexer implementation given a
 // configuration and repo store
-func NewIndexer(cfg *Config, repos KeyValueStorer) indexer {
+func NewIndexer(
+	cfg *Config,
+	repos KeyValueStorer) indexer {
+
 	return indexer{
 		cfg:    cfg,
 		shards: []index.IndexWriter{},
@@ -142,64 +160,25 @@ func getRoot(c *Config, q *IndexQuery) string {
 	return path.Join(c.IndexRoot, q.Key)
 }
 
-type readerSourcer interface {
-	Reader(name string) (io.ReadCloser, error)
-}
-
-type indexWriter interface {
-	Create(name string) index.IndexWriter
-	Add(name string, r io.Reader)
-}
-
-type localReader struct {
-	root string
-}
-
-func (l localReader) Reader(name string) (io.ReadCloser, error) {
-	if l.root == "" {
-		panic("localReader.root must not be empty")
+func getIndexWriter(ctx context.Context, name string) index.IndexWriter {
+	if f := ctx.Value("IndexWriterFunc"); f != nil {
+		return f.(func(name string) index.IndexWriter)(name)
 	}
-	return os.Open(path.Join(l.root, name))
+	// Use the real implementation as the default IndexWriterFunc.
+	// Create will log.Fatal if name doesn't exist.
+	return index.Create(name)
 }
 
-func getReaderSourcer(ctx context.Context, root string) readerSourcer {
-	// Allow the readerSourcer to be swapped in for testing.
-	// Defaults to using a local filesystem reader rooted at the
-	// request Root path, which has been validated above.
-	if _sourcer := ctx.Value("readerSourcer"); _sourcer != nil {
-		return _sourcer.(readerSourcer)
+func getFileSystem(ctx context.Context, root string) walkablefs.WalkableFileSystem {
+	if fs := ctx.Value("FileSystem"); fs != nil {
+		return fs.(walkablefs.WalkableFileSystem)
 	}
-	return localReader{root}
-}
-
-func getIndexWriter(ctx context.Context) index.IndexWriter {
-	if _writer := ctx.Value("IndexWriter"); _writer != nil {
-		return _writer.(index.IndexWriter)
-	}
-	return nil
+	// default to a walkable local OS filesystem at the root dir
+	return walkablefs.New(vfs.OS(root))
 }
 
 func shardName(key string, n int) string {
 	return key + "-" + strconv.Itoa(n) + ".afindex"
-}
-
-func (i *indexer) makeIndexShards(key, root string) {
-	// create index shards
-	numShards := i.cfg.NumShards
-	if numShards == 0 {
-		numShards = 2
-	}
-	numShards = utils.MinInt(numShards, maxShards)
-	i.shards = make([]index.IndexWriter, numShards)
-	log.Debug("index [%v] creating %d shards in %s", key, len(i.shards), root)
-	for n := range i.shards {
-		name := path.Join(root, shardName(key, n))
-		if i.writer == nil {
-			i.shards[n] = index.Create(name)
-		} else {
-			i.shards[n] = i.writer.Create(name)
-		}
-	}
 }
 
 // Index executes the indexing request (on this machine, in this
@@ -214,27 +193,40 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 
 	if err = req.Normalize(); err != nil {
 		log.Info("index [%v] error: %v", req.Key, err)
-		resp.Error = err.(*errs.StructError)
-		return
-	}
-
-	root := getRoot(i.cfg, &req)
-	if err = os.MkdirAll(root, 0755); err != nil && !os.IsExist(err) {
 		resp.Error = errs.NewStructError(err)
 		return
 	}
 
-	repo := newRepoFromQuery(&req, root)
+	// create index shards
+	var nshards int
+	if nshards = i.cfg.NumShards; nshards == 0 {
+		nshards = 1
+	}
+	nshards = utils.MinInt(nshards, maxShards)
+	i.shards = make([]index.IndexWriter, nshards)
+	i.root = getRoot(i.cfg, &req)
+
+	for n := range i.shards {
+		name := path.Join(i.root, shardName(req.Key, n))
+		i.shards[n] = getIndexWriter(ctx, name)
+	}
+
+	fs := getFileSystem(ctx, i.root)
+
+	// todo: remove this - and move any such setup to the indexwriter
+	// whom can virtualize the need for this call.
+
+	// if err = os.MkdirAll(root, 0755); err != nil && !os.IsExist(err) {
+	// 	resp.Error = errs.NewStructError(err)
+	// 	return
+	// }
+
+	repo := newRepoFromQuery(&req, i.root)
 	repo.SetMeta(i.cfg.RepoMeta, req.Meta)
 	resp.Repo = repo
-	i.sourcer = getReaderSourcer(ctx, req.Root)
-	i.writer = getIndexWriter(ctx)
 
-	// create index shards and concurrently perform indexing
-	i.makeIndexShards(req.Key, root)
 	// Add query Files and scan Dirs for files to index
-	names, err := i.scanner(ctx, &req)
-	nshards := len(i.shards)
+	names, err := i.scanner(fs, &req)
 	ch := make(chan int, nshards)
 	chnames := make(chan string, 100)
 	go func() {
@@ -245,22 +237,25 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	}()
 	reqch := make(chan par.RequestFunc, nshards)
 	for _, shard := range i.shards {
-		reqch <- indexShard(&i, &req, shard, chnames, ch)
+		reqch <- indexShard(&i, &req, shard, fs, chnames, ch)
 	}
 	close(reqch)
 	err = par.Requests(reqch).WithConcurrency(nshards).DoWithContext(ctx)
 	close(ch)
 
-	// Await incoming results and update the response
+	// Await results, each indicating the number of files scanned
 	for num := range ch {
 		repo.NumFiles += num
 	}
+
 	repo.NumShards = len(i.shards)
 	// Flush our index shard files
 	for _, shard := range i.shards {
 		shard.Flush()
-		repo.SizeData += ByteSize(shard.DataBytes())
 		repo.SizeIndex += ByteSize(shard.IndexBytes())
+		repo.SizeData += ByteSize(shard.DataBytes())
+		log.Debug("index flush %v (data) %v (index)",
+			repo.SizeData, repo.SizeIndex)
 	}
 	repo.ElapsedIndexing = time.Since(start)
 	repo.TimeUpdated = time.Now().UTC()
@@ -272,37 +267,30 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 		msg = "error: " + resp.Error.Error()
 	} else {
 		repo.State = OK
-		msg = "ok"
+		msg = "ok " + fmt.Sprintf(
+			"(%v files, %v data, %v index)",
+			repo.NumFiles, repo.SizeData, repo.SizeIndex)
 	}
 	log.Info("index [%v] %v [%v]", req.Key, msg, repo.ElapsedIndexing)
 	return
 }
 
-type rootstripper struct {
-	advance int
-}
-
-func newRootStripper(rootpath string) rootstripper {
-	advance := len(rootpath)
-	if !strings.HasSuffix(rootpath, string(os.PathSeparator)) {
-		advance++
-	}
-	return rootstripper{advance}
-}
-
-func (rs rootstripper) suffix(s string) string {
-	return s[rs.advance:]
+func trimLeadingSlash(name string) string {
+	return strings.TrimPrefix(name, string(os.PathSeparator))
 }
 
 // The scanner returns files eligible for indexing
-func (i *indexer) scanner(ctx context.Context, query *IndexQuery) ([]string, error) {
+func (i *indexer) scanner(fs walkablefs.WalkableFileSystem, query *IndexQuery) ([]string, error) {
 	var err error
-	rs := newRootStripper(query.Root)
+
 	names := make([]string, 0)
 
 	// First, add any specific files in the request
 	for _, name := range query.Files {
-		names = append(names, name)
+		// Only add files that we can stat to the list
+		if fi, err := fs.Lstat(trimLeadingSlash(name)); err == nil && !fi.IsDir() {
+			names = append(names, name)
+		}
 	}
 
 	// For each of the Dirs, walk the contents
@@ -318,12 +306,11 @@ func (i *indexer) scanner(ctx context.Context, query *IndexQuery) ([]string, err
 					return filepath.SkipDir
 				}
 			} else if !info.IsDir() && info.Mode()&os.ModeType == 0 {
-				names = append(names, rs.suffix(p))
+				names = append(names, trimLeadingSlash(p))
 			}
 			return nil
 		}
-		path = filepath.Join(query.Root, path)
-		err = filepath.Walk(path, walker)
+		err = fs.Walk(path, walker)
 	}
 	return names, err
 }
@@ -332,6 +319,7 @@ func indexShard(
 	i *indexer,
 	q *IndexQuery,
 	writer index.IndexWriter,
+	fs walkablefs.WalkableFileSystem,
 	in chan string,
 	out chan int) par.RequestFunc {
 
@@ -339,7 +327,8 @@ func indexShard(
 	return func(ctx context.Context) error {
 		numFiles := 0
 		for name := range in {
-			if r, err := i.sourcer.Reader(name); err == nil {
+			r, err := fs.Open(name)
+			if err == nil {
 				writer.Add(name, r)
 				_ = r.Close()
 				numFiles++

@@ -12,28 +12,34 @@ import (
 	"github.com/andaru/afind/errs"
 	"github.com/andaru/codesearch/index"
 	"github.com/andaru/codesearch/regexp"
+	"golang.org/x/tools/godoc/vfs"
 )
 
 // grep shadows codesearch.regexp.Grep
 type grep struct {
 	// Emulate a regexp.Grep object
 	regexp.Grep
-	buf []byte // private from regexp.Grep
+
+	// private from regexp.Grep
+	buf []byte
 
 	filename string
 	root     string
 	err      error
 
+	// local private data
 	ctxPre  int
 	ctxPost int
 	ctxBoth int
+
+	fs vfs.FileSystem
 }
 
 // Returns a new local RE2 grepper for this repository
 // using the index filename and index root path prefix
 // (stripped from all filenames added to the index).
-func newGrep(ixfilename, root string) *grep {
-	return &grep{filename: ixfilename, root: root}
+func newGrep(ixfilename, root string, fs vfs.FileSystem) *grep {
+	return &grep{filename: ixfilename, root: root, fs: fs}
 }
 
 // builds regular expressions for text and pathname matching
@@ -65,7 +71,7 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 	// Check to see if the repo root is still available. If not,
 	// return an error so that the caller can mark the repository
 	// unavailable.
-	if _, err = os.Stat(s.root); err != nil {
+	if _, err = s.fs.Lstat(s.root); err != nil {
 		log.Debug("grepper couldn't stat repo root %s: %v", s.root, err)
 		return
 	}
@@ -82,6 +88,7 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 	s.Regexp = re
 	q := index.RegexpQuery(re.Syntax)
 	post = ix.PostingQuery(q)
+	log.Debug("posting query has %d candidates", len(post))
 
 	// Optionally filter the path names in the posting query results
 	if pathre != nil {
@@ -122,7 +129,7 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 			resp.Matches[name] = make(map[string]map[string]string)
 			// insert our repo key to optimise upstream merges
 			resp.Matches[name][key] = matches
-			resp.NumMatches += int64(n)
+			resp.NumMatches += uint64(n)
 		}
 	}
 	return
@@ -130,13 +137,13 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 
 func (s *grep) readfile(name string) (int, map[string]string, error) {
 	fname := path.Join(s.root, name)
-	f, err := os.Open(fname)
+	f, err := s.fs.Open(fname)
 	if err != nil {
 		return 0, nil, err
 	}
 	abc := func() {
 		if err := f.Close(); err != nil {
-			log.Critical("grep file close error:", err.Error())
+			log.Critical("readFile close error:", err.Error())
 		}
 	}
 	defer abc() // always be closing

@@ -2,10 +2,12 @@ package afind
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/errs"
+	"github.com/andaru/afind/walkablefs"
 )
 
 // Searcher provides a generic search interface.
@@ -15,6 +17,10 @@ import (
 // a search query appropriately.
 type Searcher interface {
 	Search(context.Context, SearchQuery) (*SearchResult, error)
+}
+
+type ChanSearcher interface {
+	Search(ctx context.Context, input <-chan SearchQuery, output chan<- *SearchResult) error
 }
 
 // SearchFunc is the generic backend search function prototype
@@ -40,12 +46,21 @@ type SearchQuery struct {
 	// Repository filtering attributes
 	// Search only these repositories if not empty
 	RepoKeys []string `json:"repo_keys"`
+
 	// Metadata to match against all repos if RepoKeys empty
 	Meta Meta `json:"meta"`
+	// If true, use regular expressions to match Meta
+	MetaRegexpMatch bool `json:"meta_use_regexp,omitempty"`
+
+	// Search context (number of lines ahead, behind or both)
+	Context SearchContext `json:"context"`
+
+	// Maximum number of matches to return
+	MaxMatches uint64 `json:"max_matches"`
+
 	// Override the 30 second default request timeout
 	Timeout time.Duration `json:"timeout"`
 
-	Context SearchContext `json:"context"`
 	// recursive query: set on RPC requests to enable single hop
 	// recursion. JSON requests may not explicitly set recursion
 	// as an extra loop safety. The HTTP request handler sets
@@ -92,12 +107,15 @@ type matchMap map[string]repoMatchMap
 // concurrent results. The results are unranked.
 type SearchResult struct {
 	// Matches per file, repo key and line number to text of lines matching
-	Matches     map[string]map[string]map[string]string `json:"matches"`
-	Errors      map[string]*errs.StructError            `json:"errors,omitempty"` // Per repo errors
-	Error       string                                  `json:"error,omitempty"`  // Any global error
-	NumMatches  int64                                   `json:"num_matches"`      // Search hit count
-	Elapsed     time.Duration                           `json:"elapsed_total"`    // Whole search time
-	ElapsedPost time.Duration                           `json:"elapsed_posting"`  // Posting query time
+	Matches map[string]map[string]map[string]string `json:"matches"`
+
+	Errors      map[string]*errs.StructError `json:"errors,omitempty"` // Per repo errors
+	Error       string                       `json:"error,omitempty"`  // Any global error
+	NumMatches  uint64                       `json:"num_matches"`      // Search hit count
+	Elapsed     time.Duration                `json:"elapsed_total"`    // Whole search time
+	ElapsedPost time.Duration                `json:"elapsed_posting"`  // Posting query time
+	Repos       map[string]*Repo             `json:"repos,omitempty"`  // Repository details
+	MaxMatches  uint64                       `json:"max_matches"`      // Max matches requested
 }
 
 // Returns a pointer to an initialized search Result.
@@ -118,58 +136,73 @@ func (sr *SearchResult) SetError(err error) {
 
 // Updates the SearchResult from the contents of other
 func (r *SearchResult) Update(other *SearchResult) {
+	enough := false
 	for file, rmatches := range other.Matches {
-		if len(rmatches) == 0 {
+		if enough {
+			break
+		} else if len(rmatches) == 0 {
 			continue
 		}
 		for repo, matches := range rmatches {
 			if len(matches) == 0 {
 				continue
 			}
-			if _, ok := r.Matches[file]; !ok {
-				r.Matches[file] = make(
-					map[string]map[string]string)
+			if enough = !r.addFileRepoMatches(file, repo, matches); enough {
+				break
 			}
-			r.Matches[file][repo] = matches
 		}
 	}
+	// Copy errors and repository information
 	for k, v := range other.Errors {
 		r.Errors[k] = v
 	}
+	for k, v := range other.Repos {
+		r.Repos[k] = v
+	}
+
+	// Append unique messages to the global error string
 	if r.Error == "" {
 		r.Error = other.Error
-	} else if other.Error != "" {
-		// Append unique messages to the global error string
-		if r.Error != other.Error {
-			r.Error += "\n" + other.Error
-		}
+	} else if other.Error != "" && !strings.HasSuffix(r.Error, other.Error) {
+		r.Error += "\n" + other.Error
 	}
-	r.NumMatches += other.NumMatches
+
 	r.Elapsed += other.Elapsed
 	r.ElapsedPost += other.ElapsedPost
 }
 
-func (r *SearchResult) addFileRepoMatches(fname, repokey string, matches fileMap) {
+func (r *SearchResult) addFileRepoMatches(fname, repokey string, matches fileMap) bool {
 	if _, ok := r.Matches[fname]; !ok {
 		r.Matches[fname] = make(map[string]map[string]string)
 	}
 	if _, ok := r.Matches[fname][repokey]; !ok {
 		r.Matches[fname][repokey] = make(fileMap)
 	}
+
 	for k, v := range matches {
 		r.Matches[fname][repokey][k] = v
+		r.NumMatches++
+		// Stop if we've hit the match limit
+		if r.MaxMatches > 0 && r.NumMatches >= r.MaxMatches {
+			return false
+		}
 	}
+	return true
 }
 
 // The Searcher implementation
 type searcher struct {
 	cfg   *Config
 	repos KeyValueStorer
+	fs    walkablefs.WalkableFileSystem
 }
 
 // Returns a new value of our Searcher implementation
 func NewSearcher(cfg *Config, repos KeyValueStorer) searcher {
-	return searcher{cfg: cfg, repos: repos}
+	return searcher{
+		cfg:   cfg,
+		repos: repos,
+	}
 }
 
 // Search performs the supplied request, returning
@@ -185,7 +218,6 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 
 	start := time.Now()
 	resp := NewSearchResult()
-
 	// If the repo is not found or is not available to search,
 	// exit with a RepoUnavailable error.
 	var repo *Repo
@@ -221,8 +253,8 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 			case <-ctx.Done():
 				return
 			default:
+				ch <- sr
 			}
-			ch <- sr
 		}(repo, shard)
 	}
 
@@ -248,6 +280,5 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 // search an individiaul afindex search for the repo for the request
 func searchLocal(ctx context.Context, req SearchQuery, repo *Repo, fname string) (
 	resp *SearchResult, err error) {
-
-	return newGrep(fname, repo.Root).search(ctx, req)
+	return newGrep(fname, repo.Root, getFileSystem(ctx, repo.Root)).search(ctx, req)
 }

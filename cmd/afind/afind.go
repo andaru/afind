@@ -33,6 +33,7 @@ var (
 		"Search only in file names matching this regexp")
 	flagSearchInsens = flagSetSearch.Bool("i", false,
 		"Case insensitive search")
+	flagMaxMatches = flagSetSearch.Uint64("n", 100, "Limit results to NUM matches")
 
 	// -key 1,2 -key 3 : one or more comma separated groups of keys
 	flagKeys flags.StringSlice
@@ -159,12 +160,18 @@ func getFlagRpcAddress() string {
 	}
 }
 
-func newContext() (*ctx, error) {
+func setupContext(context *ctx) error {
 	cl, err := rpc.Dial("tcp", getFlagRpcAddress())
 	if err != nil {
-		return nil, err
+		return err
 	}
+	context.repos = api.NewReposClient(cl)
+	context.searcher = api.NewSearcherClient(cl)
+	context.indexer = api.NewIndexerClient(cl)
+	return nil
+}
 
+func newContext() *ctx {
 	keys := make([]string, len(flagKeys))
 	for i, k := range flagKeys {
 		keys[i] = k
@@ -172,12 +179,8 @@ func newContext() (*ctx, error) {
 	context := &ctx{
 		repoKeys: keys,
 		meta:     flagMeta,
-		client:   cl,
 	}
-	context.repos = api.NewReposClient(cl)
-	context.searcher = api.NewSearcherClient(cl)
-	context.indexer = api.NewIndexerClient(cl)
-	return context, nil
+	return context
 }
 
 func getSearchContext() afind.SearchContext {
@@ -195,6 +198,7 @@ func search(c *ctx, query string) error {
 		IgnoreCase: *flagSearchInsens,
 		RepoKeys:   flagKeys,
 		Meta:       afind.Meta(flagMeta),
+		MaxMatches: *flagMaxMatches,
 		Recurse:    true,
 		// Timeout:    time.Duration(*flagTimeoutSearch) * time.Second,
 	}
@@ -204,6 +208,8 @@ func search(c *ctx, query string) error {
 	printMatches(sr)
 	// print per repo errors, if any were found
 	printErrors(sr)
+	// print repo information
+	printRepos(sr)
 
 	if sr.Error != "" {
 		err = errors.New(sr.Error)
@@ -290,10 +296,7 @@ func doAfind() error {
 
 	command := strings.ToLower(flag.Arg(0))
 	args := flag.Args()[1:]
-	context, err := newContext()
-	if err != nil {
-		return err
-	}
+	context := newContext()
 
 	switch command {
 	case "index":
@@ -313,7 +316,9 @@ func doAfind() error {
 		key := args[0]
 		root := args[1]
 		subdirs := args[2:]
-		return index(context, key, root, subdirs)
+		if err = setupContext(context); err == nil {
+			return index(context, key, root, subdirs)
+		}
 	case "search":
 		err = flagSetSearch.Parse(args)
 		if err != nil {
@@ -326,11 +331,16 @@ func doAfind() error {
 			flagSetSearch.Usage()
 			return nil
 		}
-		return search(context, strings.Join(args, " "))
+		if err = setupContext(context); err == nil {
+			return search(context, strings.Join(args, " "))
+		}
 	case "repos":
 		err = flagSetRepos.Parse(args)
 		if err != nil {
 			flagSetRepos.Usage()
+			return err
+		}
+		if err = setupContext(context); err != nil {
 			return err
 		}
 		if len(args) == 0 {
@@ -387,6 +397,9 @@ func printErrors(sr *afind.SearchResult) {
 	}
 }
 
+func printRepos(sr *afind.SearchResult) {
+}
+
 func main() {
 	flag.Parse()
 
@@ -397,7 +410,7 @@ func main() {
 	}
 	err := doAfind()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %#v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
