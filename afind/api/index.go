@@ -100,6 +100,8 @@ func remoteIndex(s *indexServer, req afind.IndexQuery,
 	return func(ctx context.Context) error {
 		ir := afind.NewIndexResult()
 		cl, err := NewRpcClient(addr)
+		defer cl.Close()
+
 		if err == nil {
 			ir, err = NewIndexerClient(cl).Index(ctx, req)
 		}
