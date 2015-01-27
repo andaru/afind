@@ -106,12 +106,13 @@ func remoteIndex(s *indexServer, req afind.IndexQuery,
 			ir, err = NewIndexerClient(cl).Index(ctx, req)
 		}
 		ir.SetError(err)
+
 		select {
 		case <-ctx.Done():
 			return nil
 		default:
+			results <- ir
 		}
-		results <- ir
 		return nil
 	}
 }
