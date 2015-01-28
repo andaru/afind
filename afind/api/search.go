@@ -144,7 +144,9 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 	return func(ctx context.Context) error {
 		sr := afind.NewSearchResult()
 		cl, err := NewRpcClient(addr)
-		defer cl.Close()
+		if cl != nil {
+			defer cl.Close()
+		}
 
 		if err == nil {
 			sr, err = NewSearcherClient(cl).Search(ctx, req)

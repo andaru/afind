@@ -123,6 +123,7 @@ func NewSearchResult() *SearchResult {
 	return &SearchResult{
 		Matches: make(map[string]map[string]map[string]string),
 		Errors:  make(map[string]*errs.StructError),
+		Repos:   make(map[string]*Repo),
 	}
 }
 
@@ -218,22 +219,27 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 
 	start := time.Now()
 	resp := NewSearchResult()
-	// If the repo is not found or is not available to search,
-	// exit with a RepoUnavailable error.
-	var repo *Repo
+	// If the repo is unavailable but not due to indexing,
+	// exit with RepoUnavailableError.
 	repokey := query.firstKey()
-	if irepo := s.repos.Get(repokey); irepo == nil {
-		resp.Errors[repokey] = errs.NewStructError(
-			errs.NewRepoUnavailableError())
-		return resp, nil
-	} else if repo = irepo.(*Repo); repo.State != OK {
+
+	irepo := s.repos.Get(repokey)
+	if irepo == nil {
 		resp.Errors[repokey] = errs.NewStructError(
 			errs.NewRepoUnavailableError())
 		return resp, nil
 	}
 
-	shards := repo.Shards()
+	repo := irepo.(*Repo)
+	resp.Repos[repo.Key] = repo
+	if repo.State == INDEXING {
+		return resp, nil
+	} else if repo.State != OK {
+		resp.Errors[repokey] = errs.NewStructError(errs.NewRepoUnavailableError())
+		return resp, nil
+	}
 
+	shards := repo.Shards()
 	left := len(shards)
 	ch := make(chan *SearchResult, 1)
 	defer close(ch)
@@ -265,6 +271,9 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 		case in := <-ch:
 			resp.Update(in)
 			left--
+			if resp.MaxMatches > 0 && resp.NumMatches >= resp.MaxMatches {
+				left = 0
+			}
 		case <-ctx.Done():
 			err = errs.NewTimeoutError("search")
 			resp.Error = err.Error()
