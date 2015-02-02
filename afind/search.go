@@ -305,6 +305,9 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 				left = 0
 			}
 			left--
+			if resp.MaxMatches > 0 && resp.NumMatches >= resp.MaxMatches {
+				left = 0
+			}
 		case <-ctx.Done():
 			err = errs.NewTimeoutError("search")
 			resp.Error = err.Error()
