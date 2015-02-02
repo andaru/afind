@@ -195,11 +195,11 @@ func (r *SearchResult) Update(other *SearchResult) {
 	r.Durations.CombinedPostingQuery += other.Durations.PostingQuery
 }
 
-func (r *SearchResult) AddFileRepoMatches(fname, repokey string, matches fileMap) bool {
-	done := func() bool {
-		return r.MaxMatches > 0 && r.NumMatches >= r.MaxMatches
-	}
+func (r *SearchResult) enoughResults() bool {
+	return r.MaxMatches > 0 && r.NumMatches >= r.MaxMatches
+}
 
+func (r *SearchResult) AddFileRepoMatches(fname, repokey string, matches fileMap) bool {
 	if _, ok := r.Matches[fname]; !ok {
 		r.Matches[fname] = make(map[string]map[string]string)
 	}
@@ -210,7 +210,7 @@ func (r *SearchResult) AddFileRepoMatches(fname, repokey string, matches fileMap
 	for k, v := range matches {
 		r.Matches[fname][repokey][k] = v
 		r.NumMatches++
-		if done() {
+		if r.enoughResults() {
 			return false
 		}
 	}
@@ -301,12 +301,10 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 		select {
 		case in := <-ch:
 			resp.Update(in)
-			if resp.MaxMatches > 0 && resp.NumMatches >= resp.MaxMatches {
+			if resp.enoughResults() {
 				left = 0
-			}
-			left--
-			if resp.MaxMatches > 0 && resp.NumMatches >= resp.MaxMatches {
-				left = 0
+			} else {
+				left--
 			}
 		case <-ctx.Done():
 			err = errs.NewTimeoutError("search")
