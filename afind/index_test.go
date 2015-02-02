@@ -1,63 +1,13 @@
 package afind
 
 import (
-	"io"
 	"strings"
 	"testing"
 
-	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/errs"
 	"github.com/andaru/afind/walkablefs"
-	"github.com/andaru/codesearch/index"
 	"golang.org/x/tools/godoc/vfs/mapfs"
 )
-
-type mockIndexWriter struct {
-	name   string
-	t      *testing.T
-	called map[string]int
-}
-
-func getMock(name string, t *testing.T) *mockIndexWriter {
-	return &mockIndexWriter{name, t, map[string]int{}}
-}
-
-const (
-	cDataBytes  = 1000
-	cIndexBytes = 123
-)
-
-func (iw mockIndexWriter) reset() {
-	iw.called = make(map[string]int)
-}
-
-func (iw mockIndexWriter) AddPaths(paths []string) {
-	iw.called["AddPaths"]++
-}
-
-func (iw mockIndexWriter) AddFile(name string) {
-	iw.called["AddFile"]++
-}
-
-func (iw mockIndexWriter) Add(name string, f io.Reader) {
-	iw.called["Add"]++
-}
-
-func (iw mockIndexWriter) DataBytes() int64 {
-	// DataBytes and IndexBytes can be called in log calls,
-	// affecting call counters.
-	iw.called["DataBytes"]++
-	return cDataBytes
-}
-
-func (iw mockIndexWriter) IndexBytes() uint32 {
-	iw.called["IndexBytes"]++
-	return cIndexBytes
-}
-
-func (iw mockIndexWriter) Flush() {
-	iw.called["Flush"]++
-}
 
 func TestGetRoot(t *testing.T) {
 	c := &Config{IndexInRepo: true}
@@ -147,6 +97,7 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestIndexerBasic(t *testing.T) {
+	mockIx.reset()
 	files := map[string]string{
 		"src/foo/foo.go": "package foo\n",
 		"README":         "Root directory README file\n\n",
@@ -156,15 +107,7 @@ func TestIndexerBasic(t *testing.T) {
 	wfs := walkablefs.New(mapfs.New(files))
 	ix := NewIndexer(c, db)
 
-	var mock *mockIndexWriter
-	writerFunc := func(name string) index.IndexWriter {
-		mock = getMock(name, t)
-		mock.reset()
-		return mock
-	}
-
-	ctx := context.WithValue(context.Background(), "FileSystem", wfs)
-	ctx = context.WithValue(ctx, "IndexWriterFunc", writerFunc)
+	ctx := testIndexContext(wfs)
 
 	query := NewIndexQuery("key2")
 	query.Dirs = []string{"."}
@@ -175,13 +118,14 @@ func TestIndexerBasic(t *testing.T) {
 	}
 	// check that the appropriate functions were mocked
 	for _, f := range []string{"Flush", "DataBytes", "IndexBytes"} {
-		if mock.called[f] != 1 {
-			t.Error("want", f, "called 1 time, got", mock.called[f])
+		v := mockIx.calls(f)
+		if v != 1 {
+			t.Error("want", f, "called 1 time, got", v, "times")
 		}
 	}
 
-	if mock.called["Add"] != 2 {
-		t.Error("want Add called 2 times, got", mock.called["Add"])
+	if mockIx.calls("Add") != 2 {
+		t.Error("want Add called 2 times, got", mockIx.calls("Add"))
 	}
 }
 
@@ -197,14 +141,7 @@ func TestIndexerSharding(t *testing.T) {
 	wfs := walkablefs.New(mapfs.New(files))
 	ix := NewIndexer(c, db)
 
-	var mock *mockIndexWriter
-	writerFunc := func(name string) index.IndexWriter {
-		mock = getMock(name, t)
-		return mock
-	}
-
-	ctx := context.WithValue(context.Background(), "FileSystem", wfs)
-	ctx = context.WithValue(ctx, "IndexWriterFunc", writerFunc)
+	ctx := testIndexContext(wfs)
 
 	query := NewIndexQuery("key1")
 	query.Dirs = []string{"."}

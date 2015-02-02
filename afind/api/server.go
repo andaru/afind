@@ -14,12 +14,21 @@ type baseServer struct {
 	indexer  afind.Indexer
 	searcher afind.Searcher
 	config   afind.Config
+
+	quit chan struct{}
 }
 
 // NewServer creates a new base server from the components provided
 func NewServer(rs afind.KeyValueStorer, ix afind.Indexer,
 	sr afind.Searcher, c *afind.Config) *baseServer {
-	return &baseServer{rs, ix, sr, *c}
+	return &baseServer{rs, ix, sr, *c, make(chan struct{}, 1)}
+}
+
+func (base *baseServer) Quit() {
+	go func() {
+		base.quit <- struct{}{}
+	}()
+	<-base.quit
 }
 
 // Utility functions used by servers

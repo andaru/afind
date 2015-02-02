@@ -7,7 +7,7 @@ import (
 
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/errs"
-	"github.com/andaru/afind/walkablefs"
+	"github.com/andaru/afind/stopwatch"
 )
 
 // Searcher provides a generic search interface.
@@ -69,7 +69,7 @@ type SearchQuery struct {
 }
 
 // SearchContext provides options around the lines of context
-// surrounding the match text. By default, no context lines are
+// surrounding the match text. By default, no additional context is
 // supplied.
 type SearchContext struct {
 	Both int `json:"both"`
@@ -84,7 +84,7 @@ func NewSearchQuery(re, pathRe string, ignore bool, repoKeys []string) SearchQue
 		PathRe:     pathRe,
 		IgnoreCase: ignore,
 		RepoKeys:   repoKeys,
-		Meta:       *new(Meta),
+		Meta:       make(Meta),
 	}
 }
 
@@ -106,23 +106,47 @@ type matchMap map[string]repoMatchMap
 // pipelines and context can be used to easily manage and merge
 // concurrent results. The results are unranked.
 type SearchResult struct {
-	// Matches per file, repo key and line number to text of lines matching
+	// Matches per file, repo key and line number to text of lines matching.
+	// This can be populated even if Errors, below, does contain values.
 	Matches map[string]map[string]map[string]string `json:"matches"`
 
-	Errors      map[string]*errs.StructError `json:"errors,omitempty"` // Per repo errors
-	Error       string                       `json:"error,omitempty"`  // Any global error
-	NumMatches  uint64                       `json:"num_matches"`      // Search hit count
-	Elapsed     time.Duration                `json:"elapsed_total"`    // Whole search time
-	ElapsedPost time.Duration                `json:"elapsed_posting"`  // Posting query time
-	Repos       map[string]*Repo             `json:"repos,omitempty"`  // Repository details
-	MaxMatches  uint64                       `json:"max_matches"`      // Max matches requested
+	// Per repo (or hostname) keys. Errors due to network
+	// connection or errors reported by remote afindd instances.
+	Errors map[string]*errs.StructError `json:"errors,omitempty"`
+
+	// A global error that occured prior to executing any search query.
+	// If Error is set, Matches will be empty.
+	Error string `json:"error,omitempty"`
+
+	// Number of lines matching the regular expression query. This
+	// value does not include any lines included for context.
+	NumMatches uint64 `json:"num_matches"`
+
+	// Elapsed time.Duration `json:"elapsed_total"` // Whole search time
+	// ElapsedPost time.Duration    `json:"elapsed_posting"` // Posting query time
+	Repos      map[string]*Repo `json:"repos,omitempty"` // Info on Repos involved in result
+	MaxMatches uint64           `json:"max_matches"`     // Max matches requested
+
+	// Query time information.
+	Durations SearchDurations `json:"durations"`
+}
+
+type SearchDurations struct {
+	PostingQuery time.Duration `json:"posting"`
+	GetRepos     time.Duration `json:"get_repos"`
+	Search       time.Duration `json:"total"`
+
+	CombinedPostingQuery time.Duration `json:"combined_posting"`
+	CombinedSearch       time.Duration `json:"combined_total"`
 }
 
 // Returns a pointer to an initialized search Result.
 func NewSearchResult() *SearchResult {
 	return &SearchResult{
-		Matches: make(map[string]map[string]map[string]string),
-		Errors:  make(map[string]*errs.StructError),
+		Matches:   make(map[string]map[string]map[string]string),
+		Errors:    make(map[string]*errs.StructError),
+		Repos:     make(map[string]*Repo),
+		Durations: SearchDurations{},
 	}
 }
 
@@ -147,7 +171,7 @@ func (r *SearchResult) Update(other *SearchResult) {
 			if len(matches) == 0 {
 				continue
 			}
-			if enough = !r.addFileRepoMatches(file, repo, matches); enough {
+			if enough = !r.AddFileRepoMatches(file, repo, matches); enough {
 				break
 			}
 		}
@@ -167,11 +191,15 @@ func (r *SearchResult) Update(other *SearchResult) {
 		r.Error += "\n" + other.Error
 	}
 
-	r.Elapsed += other.Elapsed
-	r.ElapsedPost += other.ElapsedPost
+	r.Durations.CombinedSearch += other.Durations.Search
+	r.Durations.CombinedPostingQuery += other.Durations.PostingQuery
 }
 
-func (r *SearchResult) addFileRepoMatches(fname, repokey string, matches fileMap) bool {
+func (r *SearchResult) AddFileRepoMatches(fname, repokey string, matches fileMap) bool {
+	done := func() bool {
+		return r.MaxMatches > 0 && r.NumMatches >= r.MaxMatches
+	}
+
 	if _, ok := r.Matches[fname]; !ok {
 		r.Matches[fname] = make(map[string]map[string]string)
 	}
@@ -182,8 +210,7 @@ func (r *SearchResult) addFileRepoMatches(fname, repokey string, matches fileMap
 	for k, v := range matches {
 		r.Matches[fname][repokey][k] = v
 		r.NumMatches++
-		// Stop if we've hit the match limit
-		if r.MaxMatches > 0 && r.NumMatches >= r.MaxMatches {
+		if done() {
 			return false
 		}
 	}
@@ -194,7 +221,6 @@ func (r *SearchResult) addFileRepoMatches(fname, repokey string, matches fileMap
 type searcher struct {
 	cfg   *Config
 	repos KeyValueStorer
-	fs    walkablefs.WalkableFileSystem
 }
 
 // Returns a new value of our Searcher implementation
@@ -216,24 +242,34 @@ func NewSearcher(cfg *Config, repos KeyValueStorer) searcher {
 func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	*SearchResult, error) {
 
-	start := time.Now()
+	sw := stopwatch.New()
+	sw.Start("total")
 	resp := NewSearchResult()
+	log.Info("search [%s] [path %s] local", query.Re, query.PathRe)
+
 	// If the repo is not found or is not available to search,
-	// exit with a RepoUnavailable error.
+	// exit with a RepoUnavailable error. Ignore repo being
+	// indexed currently.
 	var repo *Repo
 	repokey := query.firstKey()
+	if repokey == "" {
+		resp.Error = "SearchQuery must have a non-empty RepoKeys"
+		return resp, nil
+	}
 	if irepo := s.repos.Get(repokey); irepo == nil {
 		resp.Errors[repokey] = errs.NewStructError(
 			errs.NewRepoUnavailableError())
 		return resp, nil
-	} else if repo = irepo.(*Repo); repo.State != OK {
+	} else if repo = irepo.(*Repo); repo.State == INDEXING {
+		// It's not an error so much if the remote is indexing
+		return resp, nil
+	} else if repo.State != OK {
 		resp.Errors[repokey] = errs.NewStructError(
 			errs.NewRepoUnavailableError())
 		return resp, nil
 	}
 
 	shards := repo.Shards()
-
 	left := len(shards)
 	ch := make(chan *SearchResult, 1)
 	defer close(ch)
@@ -248,6 +284,7 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 					_ = s.repos.Set(r.Key, r)
 				}
 				sr.Error = err.Error()
+				sr.Repos[r.Key] = r
 			}
 			select {
 			case <-ctx.Done():
@@ -258,12 +295,15 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 		}(repo, shard)
 	}
 
-	// Collect and merge errors
+	// Collect and merge responses
 	var err error
 	for left > 0 {
 		select {
 		case in := <-ch:
 			resp.Update(in)
+			if resp.MaxMatches > 0 && resp.NumMatches >= resp.MaxMatches {
+				left = 0
+			}
 			left--
 		case <-ctx.Done():
 			err = errs.NewTimeoutError("search")
@@ -272,13 +312,16 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 		}
 	}
 
-	elapsed := time.Since(start)
-	resp.Elapsed = elapsed
+	// elapsed := time.Since(start)
+	// resp.Elapsed = elapsed
+	resp.Durations.Search = sw.Stop("total")
 	return resp, err
 }
 
 // search an individiaul afindex search for the repo for the request
 func searchLocal(ctx context.Context, req SearchQuery, repo *Repo, fname string) (
 	resp *SearchResult, err error) {
-	return newGrep(fname, repo.Root, getFileSystem(ctx, repo.Root)).search(ctx, req)
+	sr, err := newGrep(fname, repo.Root, getFileSystem(ctx, repo.Root)).search(ctx, req)
+	sr.Repos[repo.Key] = repo
+	return sr, err
 }

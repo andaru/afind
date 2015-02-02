@@ -6,10 +6,10 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"time"
 
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/errs"
+	"github.com/andaru/afind/stopwatch"
 	"github.com/andaru/codesearch/index"
 	"github.com/andaru/codesearch/regexp"
 	"golang.org/x/tools/godoc/vfs"
@@ -58,37 +58,33 @@ func buildRegexps(query *SearchQuery) (re, pathre *regexp.Regexp, err error) {
 func (s *grep) search(ctx context.Context, query SearchQuery) (
 	resp *SearchResult, err error) {
 
+	sw := stopwatch.New()
+	sw.Start("total")
+
 	resp = NewSearchResult()
 	key := query.firstKey()
+	var post []uint32
+	var ix *index.Index
+	var q *index.Query
 
 	// Setup the RE2 expression text based on query options
 	var re *regexp.Regexp
 	var pathre *regexp.Regexp
 	if re, pathre, err = buildRegexps(&query); err != nil {
-		return
-	}
-
-	// Check to see if the repo root is still available. If not,
-	// return an error so that the caller can mark the repository
-	// unavailable.
-	if _, err = s.fs.Lstat(s.root); err != nil {
-		log.Debug("grepper couldn't stat repo root %s: %v", s.root, err)
-		return
+		goto done
 	}
 
 	// Attempt to open the index file
-	var ix *index.Index
 	if ix, err = index.Open(s.filename); err != nil {
-		return
+		goto done
 	}
 
 	// Perform the posting query to get candidate files to grep
-	var post []uint32
-	pstart := time.Now()
+	sw.Start("posting")
+
 	s.Regexp = re
-	q := index.RegexpQuery(re.Syntax)
+	q = index.RegexpQuery(re.Syntax)
 	post = ix.PostingQuery(q)
-	log.Debug("posting query has %d candidates", len(post))
 
 	// Optionally filter the path names in the posting query results
 	if pathre != nil {
@@ -102,8 +98,7 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 		}
 		post = files
 	}
-	pelapsed := time.Since(pstart)
-	resp.ElapsedPost = pelapsed
+	resp.Durations.PostingQuery = sw.Stop("posting")
 
 	// Setup context parameters
 	s.ctxPre = query.Context.Pre
@@ -116,7 +111,7 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 		select {
 		case <-ctx.Done():
 			err = errs.NewTimeoutError("search")
-			return
+			goto done
 		default:
 		}
 
@@ -132,6 +127,9 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 			resp.NumMatches += uint64(n)
 		}
 	}
+
+done:
+	resp.Durations.Search = sw.Stop("total")
 	return
 }
 

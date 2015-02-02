@@ -9,6 +9,7 @@ import (
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/afind"
 	"github.com/andaru/afind/errs"
+	"github.com/andaru/afind/stopwatch"
 	"github.com/julienschmidt/httprouter"
 	"github.com/savaki/par"
 )
@@ -28,34 +29,35 @@ func (s *SearcherClient) Close() error {
 
 // returns a slice of Repo relevant to this search query
 func getRepos(rstore afind.KeyValueStorer, request afind.SearchQuery) []*afind.Repo {
-
 	repos := make([]*afind.Repo, 0)
 
-	// Select requested repo keys from the database
+	// Either select specific requested repo keys from the database
 	for _, key := range request.RepoKeys {
 		if value := rstore.Get(key); value != nil {
 			repos = append(repos, value.(*afind.Repo))
 		}
 	}
-
-	// Otherwise, filter all Repo by the request Metadata. Values in the Meta
-	// can be considered regular expressions, if request.MetaRegexpMatch is set.
-	// If not set, Meta values are treated as exact strings to filter for. Only
-	// matching keys are considered, so filters that do not appear in the Repo
-	// pass the filter.
-	if len(request.RepoKeys) == 0 {
-		rstore.ForEach(func(key string, value interface{}) bool {
-			r := value.(*afind.Repo)
-			if !request.MetaRegexpMatch && r.Meta.Matches(request.Meta) {
-				// Exact string match
-				repos = append(repos, r)
-			} else if request.MetaRegexpMatch && r.Meta.MatchesRegexp(request.Meta) {
-				// Regular expression match
-				repos = append(repos, r)
-			}
-			return true
-		})
+	if len(request.RepoKeys) > 0 {
+		return repos
 	}
+
+	// Otherwise, filter all available Repo against request
+	// Metadata. Values in the Meta are considered regular
+	// expressions, if request.MetaRegexpMatch is set. If not
+	// set, Meta values are treated as exact strings to filter
+	// for. Only matching keys are considered, so filters that do
+	// not appear in the Repo pass the filter.
+	rstore.ForEach(func(key string, value interface{}) bool {
+		r := value.(*afind.Repo)
+		if !request.MetaRegexpMatch && r.Meta.Matches(request.Meta) {
+			// Exact string match
+			repos = append(repos, r)
+		} else if request.MetaRegexpMatch && r.Meta.MatchesRegexp(request.Meta) {
+			// Regular expression match
+			repos = append(repos, r)
+		}
+		return true
+	})
 
 	return repos
 }
@@ -144,10 +146,14 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 	return func(ctx context.Context) error {
 		sr := afind.NewSearchResult()
 		cl, err := NewRpcClient(addr)
-		defer cl.Close()
-
 		if err == nil {
-			sr, err = NewSearcherClient(cl).Search(ctx, req)
+			client := NewSearcherClient(cl)
+			defer func() {
+				_ = client.Close()
+			}()
+
+			sr, err = client.Search(ctx, req)
+			updateRepos(s, sr)
 		}
 		if err != nil {
 			sr.Errors[req.Meta.Host()] = errs.NewStructError(err)
@@ -182,7 +188,8 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	}
 	log.Info(msg)
 
-	start := time.Now()
+	sw := stopwatch.New()
+	sw.Start("total")
 	resp = afind.NewSearchResult()
 	resp.MaxMatches = req.MaxMatches
 	// Get a request context
@@ -190,7 +197,10 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	defer cancel()
 
 	// Determine which repos to search, then search concurrently
+	sw.Start("get_repos")
 	searchRepos := getRepos(s.repos, req)
+	resp.Durations.GetRepos = sw.Stop("get_repos")
+
 	ch := make(chan *afind.SearchResult, len(searchRepos))
 	reqch := make(chan par.RequestFunc, len(searchRepos))
 	for _, repo := range searchRepos {
@@ -211,12 +221,18 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	for in := range ch {
 		resp.Update(in)
 	}
-	resp.Elapsed = time.Since(start)
+	resp.Durations.Search = sw.Stop("total")
 	if resp.Error == "" {
 		msg = "done"
 	} else {
 		msg = "error"
 	}
-	log.Info("search [%s] %s %v", req.Re, msg, resp.Elapsed)
+	log.Info("search [%s] %s %v", req.Re, msg, resp.Durations.Search)
 	return
+}
+
+func updateRepos(s *searchServer, resp *afind.SearchResult) {
+	for key, repo := range resp.Repos {
+		_ = s.repos.Set(key, repo)
+	}
 }

@@ -398,6 +398,10 @@ func printErrors(sr *afind.SearchResult) {
 }
 
 func printRepos(sr *afind.SearchResult) {
+	fmt.Println("Repos in result:")
+	for _, repo := range sr.Repos {
+		repoAsString(repo)
+	}
 }
 
 func main() {

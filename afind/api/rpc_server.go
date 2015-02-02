@@ -25,11 +25,12 @@ func NewRpcServer(l net.Listener, b *baseServer) *RpcServer {
 }
 
 func (s *RpcServer) Close() error {
+	s.Quit()
 	return s.l.Close()
 }
 
 func (s *RpcServer) CloseNoErr() {
-	_ = s.l.Close()
+	_ = s.Close()
 }
 
 func (s *RpcServer) Register() {
@@ -44,8 +45,14 @@ func (s *RpcServer) Register() {
 func (s *RpcServer) Serve() error {
 	defer s.CloseNoErr()
 	delay := time.Duration(3 * time.Millisecond)
-	max := 1 * time.Second
+	max := 5 * time.Second
 	for {
+		select {
+		case <-s.quit:
+			return nil
+		default:
+		}
+
 		rwc, err := s.l.Accept()
 		if err != nil {
 			e, ok := err.(net.Error)

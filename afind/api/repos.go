@@ -30,7 +30,8 @@ func (r *ReposClient) GetAll() (resp map[string]*afind.Repo, err error) {
 }
 
 func (r *ReposClient) Delete(key string) (err error) {
-	err = r.client.Call(r.endpoint+".Delete", key, nil)
+	var resp *struct{}
+	err = r.client.Call(r.endpoint+".Delete", key, resp)
 	return
 }
 
@@ -58,8 +59,10 @@ func (s *reposServer) GetAll(args struct{}, reply *map[string]*afind.Repo) error
 	return nil
 }
 
-func (s *reposServer) Delete(args string, _ *interface{}) error {
-	return s.repos.Delete(args)
+func (s *reposServer) Delete(args string, reply *struct{}) error {
+	_ = s.repos.Delete(args)
+	reply = &struct{}{}
+	return nil
 }
 
 func (s *reposServer) webDelete(rw http.ResponseWriter, req *http.Request,
