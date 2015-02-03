@@ -240,50 +240,56 @@ func NewSearcher(cfg *Config, repos KeyValueStorer) searcher {
 // attribute. This forces multi-repository searches to be composed
 // using other libraries.
 func (s searcher) Search(ctx context.Context, query SearchQuery) (
-	*SearchResult, error) {
+	resp *SearchResult, err error) {
 
+	log.Info("search [%s] [path %s] local", query.Re, query.PathRe)
 	sw := stopwatch.New()
 	sw.Start("total")
-	resp := NewSearchResult()
-	log.Info("search [%s] [path %s] local", query.Re, query.PathRe)
+
+	var repo *Repo
+	var shards []string
+	var irepo interface{}
+	resp = NewSearchResult()
+	ch := make(chan *SearchResult, 1)
+	left := 0
 
 	// If the repo is not found or is not available to search,
 	// exit with a RepoUnavailable error. Ignore repo being
 	// indexed currently.
-	var repo *Repo
 	repokey := query.firstKey()
 	if repokey == "" {
 		resp.Error = "SearchQuery must have a non-empty RepoKeys"
-		return resp, nil
+		goto done
 	}
-	if irepo := s.repos.Get(repokey); irepo == nil {
+	irepo = s.repos.Get(repokey)
+	if irepo == nil {
 		resp.Errors[repokey] = errs.NewStructError(
 			errs.NewRepoUnavailableError())
-		return resp, nil
-	} else if repo = irepo.(*Repo); repo.State == INDEXING {
-		// It's not an error so much if the remote is indexing
-		return resp, nil
-	} else if repo.State != OK {
+		goto done
+	}
+	if repo = irepo.(*Repo); repo.State == INDEXING {
+		goto done
+	}
+	if repo.State != OK {
 		resp.Errors[repokey] = errs.NewStructError(
 			errs.NewRepoUnavailableError())
-		return resp, nil
+		goto done
 	}
 
-	shards := repo.Shards()
-	left := len(shards)
-	ch := make(chan *SearchResult, 1)
+	shards = repo.Shards()
+	left = len(shards)
 	defer close(ch)
 
 	for _, shard := range shards {
 		go func(r *Repo, fname string) {
-			sr, err := searchLocal(ctx, query, r, fname)
-			if err != nil {
+			sr, e := searchLocal(ctx, query, r, fname)
+			if e != nil {
 				// Maybe mark the repo as errored (unavailable)
-				if os.IsNotExist(err) || os.IsPermission(err) {
+				if os.IsNotExist(e) || os.IsPermission(e) {
 					r.State = ERROR
 					_ = s.repos.Set(r.Key, r)
 				}
-				sr.Error = err.Error()
+				sr.Error = e.Error()
 				sr.Repos[r.Key] = r
 			}
 			select {
@@ -296,9 +302,12 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	}
 
 	// Collect and merge responses
-	var err error
 	for left > 0 {
 		select {
+		case <-ctx.Done():
+			err = errs.NewTimeoutError("search")
+			resp.Error = err.Error()
+			left = 0
 		case in := <-ch:
 			resp.Update(in)
 			if resp.enoughResults() {
@@ -306,15 +315,10 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 			} else {
 				left--
 			}
-		case <-ctx.Done():
-			err = errs.NewTimeoutError("search")
-			resp.Error = err.Error()
-			left = 0
 		}
 	}
 
-	// elapsed := time.Since(start)
-	// resp.Elapsed = elapsed
+done:
 	resp.Durations.Search = sw.Stop("total")
 	return resp, err
 }

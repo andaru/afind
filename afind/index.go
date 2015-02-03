@@ -160,13 +160,17 @@ func getRoot(c *Config, q *IndexQuery) string {
 	return path.Join(c.IndexRoot, q.Key)
 }
 
-func getIndexWriter(ctx context.Context, name string) index.IndexWriter {
+func getIndexWriter(ctx context.Context, name string) (index.IndexWriter, error) {
 	if f := ctx.Value("IndexWriterFunc"); f != nil {
-		return f.(func(name string) index.IndexWriter)(name)
+		return f.(func(name string) index.IndexWriter)(name), nil
 	}
 	// Use the real implementation as the default IndexWriterFunc.
-	// Create will log.Fatal if name doesn't exist.
-	return index.Create(name)
+	// Create will log.Fatal if name doesn't exist, so try to create
+	// the path first.
+	if err := os.MkdirAll(path.Dir(name), 0755); err != nil && !os.IsExist(err) {
+		return nil, nil
+	}
+	return index.Create(name), nil
 }
 
 func getFileSystem(ctx context.Context, root string) walkablefs.WalkableFileSystem {
@@ -208,19 +212,15 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 
 	for n := range i.shards {
 		name := path.Join(i.root, shardName(req.Key, n))
-		i.shards[n] = getIndexWriter(ctx, name)
+		if ixw, err := getIndexWriter(ctx, name); err != nil {
+			resp.Error = errs.NewStructError(err)
+			return resp, nil
+		} else {
+			i.shards[n] = ixw
+		}
 	}
 
 	fs := getFileSystem(ctx, i.root)
-
-	// todo: remove this - and move any such setup to the indexwriter
-	// whom can virtualize the need for this call.
-
-	// if err = os.MkdirAll(root, 0755); err != nil && !os.IsExist(err) {
-	// 	resp.Error = errs.NewStructError(err)
-	// 	return
-	// }
-
 	repo := newRepoFromQuery(&req, i.root)
 	repo.SetMeta(i.cfg.RepoMeta, req.Meta)
 	resp.Repo = repo

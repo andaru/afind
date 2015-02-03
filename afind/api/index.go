@@ -22,8 +22,8 @@ func NewIndexerClient(client *rpc.Client) *IndexerClient {
 	return &IndexerClient{endpoint: EPIndexer, client: client}
 }
 
-func (i *IndexerClient) Close() error {
-	return i.client.Close()
+func (i *IndexerClient) Close() {
+	_ = i.client.Close()
 }
 
 func (i *IndexerClient) Index(ctx context.Context, req afind.IndexQuery) (
@@ -100,12 +100,12 @@ func remoteIndex(s *indexServer, req afind.IndexQuery,
 	return func(ctx context.Context) error {
 		ir := afind.NewIndexResult()
 		cl, err := NewRpcClient(addr)
-		if cl != nil {
-			defer cl.Close()
-		}
-
 		if err == nil {
-			ir, err = NewIndexerClient(cl).Index(ctx, req)
+			client := NewIndexerClient(cl)
+			defer client.Close()
+
+			ir, err = client.Index(ctx, req)
+			updateRepos(s.repos, map[string]*afind.Repo{ir.Repo.Key: ir.Repo})
 		}
 		ir.SetError(err)
 
@@ -134,14 +134,11 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 	log.Debug("index [%s] request %#v local=%v", req.Key, req, local)
 	resp = afind.NewIndexResult()
 
-	// Duplicate request handling: if this is a remote indexing
-	// request and we've got a recent matching Repo for that key
-	// already, save RPC bandwith and latency and return our copy.
+	// A repo cannot be updated or replaced. If a Repo with the same
+	// key already exists on this instance, return it immediately.
 	if r := s.repos.Get(req.Key); r != nil {
 		resp.Repo = r.(*afind.Repo)
-		if local || !resp.Repo.Stale(s.cfg.TimeoutRepoStale) {
-			return
-		}
+		return
 	}
 
 	// Set a marker repo in the store, indicating we're presently indexing

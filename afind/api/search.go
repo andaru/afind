@@ -23,8 +23,8 @@ func NewSearcherClient(client *rpc.Client) *SearcherClient {
 	return &SearcherClient{endpoint: EPSearcher, client: client}
 }
 
-func (s *SearcherClient) Close() error {
-	return s.client.Close()
+func (s *SearcherClient) Close() {
+	_ = s.client.Close()
 }
 
 // returns a slice of Repo relevant to this search query
@@ -65,6 +65,7 @@ func getRepos(rstore afind.KeyValueStorer, request afind.SearchQuery) []*afind.R
 func (s *SearcherClient) Search(ctx context.Context, query afind.SearchQuery) (
 	*afind.SearchResult, error) {
 	// todo: use context to cancel long running tasks
+	log.Debug("search rpc client %#v", query)
 	resp := afind.NewSearchResult()
 	err := s.client.Call(s.endpoint+".Search", query, resp)
 	return resp, err
@@ -148,12 +149,10 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 		cl, err := NewRpcClient(addr)
 		if err == nil {
 			client := NewSearcherClient(cl)
-			defer func() {
-				_ = client.Close()
-			}()
+			defer client.Close()
 
 			sr, err = client.Search(ctx, req)
-			updateRepos(s, sr)
+			updateRepos(s.repos, sr.Repos)
 		}
 		if err != nil {
 			sr.Errors[req.Meta.Host()] = errs.NewStructError(err)
@@ -207,8 +206,10 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 		req.RepoKeys = []string{repo.Key}
 		req.Meta.SetHost(repo.Host())
 		if isLocal(s.cfg, repo.Host()) {
+			log.Debug("executing search locally")
 			reqch <- localSearch(s, req, ch)
 		} else {
+			log.Debug("executing search remotely")
 			reqch <- remoteSearch(s, req, ch)
 		}
 	}
@@ -231,8 +232,8 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	return
 }
 
-func updateRepos(s *searchServer, resp *afind.SearchResult) {
-	for key, repo := range resp.Repos {
-		_ = s.repos.Set(key, repo)
+func updateRepos(kv afind.KeyValueStorer, repos map[string]*afind.Repo) {
+	for key, repo := range repos {
+		_ = kv.Set(key, repo)
 	}
 }

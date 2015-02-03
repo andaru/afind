@@ -220,13 +220,29 @@ type testSystem struct {
 	rpcServer *RpcServer
 }
 
+var (
+	t_default_fe_port = "57050"
+	t_rpc_port        = "57071"
+	t_http_port       = "57072"
+	t_fe_host         = "127.0.0.2"
+	t_be_host         = "127.0.0.202"
+)
+
 func getTestConfig() (c afind.Config) {
-	c = afind.Config{RepoMeta: map[string]string{}}
-	c.RepoMeta["host"] = "testhost"
-	c.RpcBind = "127.0.0.99:50800"
+	c = afind.Config{RepoMeta: afind.Meta{}}
+	c.RepoMeta.SetHost("testhost")
+	c.RpcBind = "127.0.0.99:" + t_default_fe_port
 	c.IndexInRepo = true
 	c.NumShards = 1
 	c.MaxSearchC = 8
+	return c
+}
+
+func getTestConfigHostPort(host, port string) (c afind.Config) {
+	c = getTestConfig()
+	c.RepoMeta.SetHost(host)
+	c.RpcBind = host + ":" + port
+	c.RepoMeta["port.rpc"] = port
 	return c
 }
 
@@ -252,6 +268,7 @@ var (
 	ktSearchQueries = map[string]*afind.SearchResult{
 		"repo1_empty": afind.NewSearchResult(),
 		"repo1_foo":   afind.NewSearchResult(),
+		"remote1_foo": afind.NewSearchResult(),
 	}
 )
 
@@ -263,6 +280,7 @@ func (i testSearcher) Search(
 	// match the request against our list of responses to return
 	key := query.RepoKeys[0] + "_" + query.Re
 	sr = ktSearchQueries[key]
+	log.Debug("fucker fucker fucker key=%#v sr=%#v", key, sr)
 	if sr == nil {
 		panic("unknown result for key: " + key)
 	}
@@ -290,19 +308,19 @@ func (i testIndexer) Index(
 	return
 }
 
-func newTestAfind() (sys testSystem) {
+func newTestAfind(c afind.Config) (sys testSystem) {
 	sys = testSystem{
 		repos:    afind.NewDb(),
 		indexer:  newTestIndexer(),
 		searcher: newTestSearcher(),
-		config:   getTestConfig(),
+		config:   c,
 	}
 	return
 }
 
-func newRpcServer(t *testing.T) testSystem {
-	sys := newTestAfind()
-	server := NewServer(sys.repos, sys.indexer, sys.searcher, &sys.config)
+func newRpcServer(t *testing.T, c afind.Config) testSystem {
+	sys := newTestAfind(c)
+	server := NewServer(sys.repos, sys.indexer, sys.searcher, &c)
 	sys.server = server
 	rpcListener, err := sys.config.ListenerRpc()
 	if err != nil {
@@ -327,7 +345,7 @@ func TestListenerBindError(t *testing.T) {
 	if user.Uid == "0" {
 		t.SkipNow()
 	}
-	sys := newTestAfind()
+	sys := newTestAfind(getTestConfig())
 	sys.config.RpcBind = ":1"
 	// In theory, this may still block if port 1 can be bound, so
 	// we have to guard with a brief timeout.
@@ -354,7 +372,7 @@ func TestListenerBindError(t *testing.T) {
 }
 
 func TestSearchAgainstEmptyAfindDb(t *testing.T) {
-	sys := newRpcServer(t)
+	sys := newRpcServer(t, getTestConfig())
 	defer sys.rpcServer.CloseNoErr()
 
 	cl, err := NewRpcClient(sys.config.RpcBind)
@@ -386,7 +404,7 @@ func testAddRepos(sys testSystem, repos map[string]*afind.Repo) {
 }
 
 func TestSearchSingleRepo(t *testing.T) {
-	sys := newRpcServer(t)
+	sys := newRpcServer(t, getTestConfig())
 	defer sys.rpcServer.CloseNoErr()
 
 	repo := afind.NewRepo()
@@ -448,4 +466,69 @@ func TestSearchSingleRepo(t *testing.T) {
 		t.Error("did not get expected line number 1")
 	}
 
+}
+
+func TestRemoteSearch(t *testing.T) {
+	// In this test, we setup two servers and perform a query
+	// to the first which will have to proxy the query to the
+	// second. Both servers run on localhost using two different
+	// addresses in 127.0.0.0/8
+
+	fe := newRpcServer(t,
+		getTestConfigHostPort(t_fe_host, t_rpc_port))
+	defer fe.rpcServer.CloseNoErr()
+	be := newRpcServer(t,
+		getTestConfigHostPort(t_be_host, t_rpc_port))
+	// defer be.rpcServer.CloseNoErr()
+
+	// Add the remote repo, which lives on the backend host
+	repo := afind.NewRepo()
+	repo.Key = "remote1"
+	repo.Root = "/"
+	repo.NumShards = 1
+	repo.Meta.SetHost(t_be_host)
+	testAddRepos(fe, map[string]*afind.Repo{"remote1": repo})
+	testAddRepos(be, map[string]*afind.Repo{"remote1": repo})
+
+	cl, err := NewRpcClient(fe.config.RpcBind)
+	if err != nil {
+		t.Error("unexpected error:", err)
+	}
+	afindd := NewSearcherClient(cl)
+
+	result := ktSearchQueries["remote1_foo"]
+	result.AddFileRepoMatches(
+		"foo/bar/test.txt", "remote1",
+		map[string]string{"100": "excellent, foo, excellent"})
+	result.Durations.PostingQuery = time.Duration(180)
+	result.Durations.Search = time.Duration(1000)
+	result.NumMatches = 1
+	result.Repos = map[string]*afind.Repo{"remote1": repo}
+	ktSearchQueries["remote1_foo"] = result
+
+	query := afind.NewSearchQuery("foo", "", true, []string{"remote1"})
+	query.Meta.SetHost(t_be_host)
+
+	sr, err := afindd.Search(context.Background(), query)
+	// There's nothing in the index yet, but we should get no error.
+	if err != nil {
+		t.Fatal("unexpected error:", err)
+	}
+	if sr.NumMatches != 1 {
+		t.Error("want 1 match, got", sr.NumMatches)
+	}
+	if len(sr.Matches) != 1 {
+		t.Error("want 1 file matched, got", len(sr.Matches))
+	} else if _, ok := sr.Matches["foo/bar/test.txt"]; !ok {
+		t.Error("want match with path foo/bar/test.txt")
+	} else if _, ok := sr.Matches["foo/bar/test.txt"]["remote1"]; !ok {
+		t.Error("want match in remote1 repo")
+	} else if v, ok := sr.Matches["foo/bar/test.txt"]["remote1"]["100"]; !ok {
+		t.Error("want match on line 100")
+	} else if v != "excellent, foo, excellent" {
+		t.Error("wanted match string 'excellent, foo, excellent', got", v)
+	}
+	if sr.Durations.Search == 0 {
+		t.Error("want non-zero search duration")
+	}
 }

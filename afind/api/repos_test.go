@@ -7,7 +7,7 @@ import (
 )
 
 func TestReposGet(t *testing.T) {
-	sys := newRpcServer(t)
+	sys := newRpcServer(t, getTestConfig())
 	defer sys.rpcServer.CloseNoErr()
 
 	// Add a repo

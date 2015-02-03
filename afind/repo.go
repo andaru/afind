@@ -52,7 +52,7 @@ func (r *Repo) SetMeta(defaults Meta, replace Meta) {
 }
 
 func (r *Repo) SetHost(host string) {
-	r.Meta["host"] = host
+	r.Meta.SetHost(host)
 }
 
 // Host returns the name of the host the Repo was indexed on
@@ -67,16 +67,6 @@ func (r *Repo) Shards() []string {
 		shards[i] = path.Join(r.IndexPath, shardName(r.Key, i))
 	}
 	return shards
-}
-
-// Stale returns true if the Repo is considered stale.
-// A Repo is stale if the supplied timeout has elapsed since the
-// last time the repo was updated.
-func (r *Repo) Stale(timeout time.Duration) bool {
-	if r.TimeUpdated.Add(timeout).Before(time.Now()) {
-		return true
-	}
-	return false
 }
 
 // NewRepo returns an initialized empty Repo

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
-	"time"
 )
 
 func TestMeta(t *testing.T) {
@@ -124,21 +123,4 @@ func TestRepoJson(t *testing.T) {
 	eq(t, "key", newr.Key)
 	eq(t, 33, newr.NumFiles)
 	eq(t, 6, newr.NumShards)
-}
-
-func TestRepoStale(t *testing.T) {
-	ckStale := func(r *Repo, expect bool, stime time.Duration) {
-		result := r.Stale(stime)
-		if result != expect {
-			t.Errorf("stale check: wanted %v for stale duration %v not %v",
-				expect, stime, result)
-		}
-		return
-	}
-
-	r := NewRepo()
-	ckStale(r, true, 0)
-	r.TimeUpdated = time.Now().Add(-5 * time.Second)
-	ckStale(r, true, time.Second)
-	ckStale(r, false, 6*time.Second)
 }

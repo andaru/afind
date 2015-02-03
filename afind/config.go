@@ -29,7 +29,7 @@ type Config struct {
 
 	// Metadata to apply to every Repo created by an indexer with
 	// this config. Manipulated by e.g., SetHost()
-	RepoMeta map[string]string
+	RepoMeta Meta
 
 	DbFile string // If non-empty, the JSON file containing the config backing store
 

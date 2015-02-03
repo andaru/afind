@@ -39,7 +39,7 @@ func getConfig() afind.Config {
 		HttpsBind:        *flagHttpsBind,
 		RpcBind:          *flagRpcBind,
 		NumShards:        *flagNumShards,
-		RepoMeta:         flagMeta,
+		RepoMeta:         afind.Meta(flagMeta),
 		DbFile:           *flagDbFile,
 		TimeoutIndex:     time.Duration(*flagTimeoutIndex * float64(time.Second)),
 		TimeoutSearch:    time.Duration(*flagTimeoutSearch * float64(time.Second)),
