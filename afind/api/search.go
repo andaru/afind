@@ -62,13 +62,21 @@ func getRepos(rstore afind.KeyValueStorer, request afind.SearchQuery) []*afind.R
 	return repos
 }
 
-func (s *SearcherClient) Search(ctx context.Context, query afind.SearchQuery) (
-	*afind.SearchResult, error) {
-	// todo: use context to cancel long running tasks
-	log.Debug("search rpc client %#v", query)
-	resp := afind.NewSearchResult()
-	err := s.client.Call(s.endpoint+".Search", query, resp)
-	return resp, err
+func (s *SearcherClient) Search(
+	ctx context.Context,
+	query afind.SearchQuery) (sr *afind.SearchResult, err error) {
+
+	sr = afind.NewSearchResult()
+	searchCall := s.client.Go(s.endpoint+".Search", query, sr, nil)
+	select {
+	case <-ctx.Done():
+		err = errs.NewTimeoutError("search")
+	case reply := <-searchCall.Done:
+		if reply.Error != nil {
+			err = reply.Error
+		}
+	}
+	return
 }
 
 // Common HTTP/GobRPC search server
@@ -206,10 +214,8 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 		req.RepoKeys = []string{repo.Key}
 		req.Meta.SetHost(repo.Host())
 		if isLocal(s.cfg, repo.Host()) {
-			log.Debug("executing search locally")
 			reqch <- localSearch(s, req, ch)
 		} else {
-			log.Debug("executing search remotely")
 			reqch <- remoteSearch(s, req, ch)
 		}
 	}

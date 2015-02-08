@@ -26,12 +26,21 @@ func (i *IndexerClient) Close() {
 	_ = i.client.Close()
 }
 
-func (i *IndexerClient) Index(ctx context.Context, req afind.IndexQuery) (
-	*afind.IndexResult, error) {
-	// todo: use context
-	resp := afind.NewIndexResult()
-	err := i.client.Call(i.endpoint+".Index", req, resp)
-	return resp, err
+func (i *IndexerClient) Index(
+	ctx context.Context,
+	query afind.IndexQuery) (ir *afind.IndexResult, err error) {
+
+	ir = afind.NewIndexResult()
+	indexCall := i.client.Go(i.endpoint+".Index", query, ir, nil)
+	select {
+	case <-ctx.Done():
+		err = errs.NewTimeoutError("index")
+	case reply := <-indexCall.Done:
+		if reply.Error != nil {
+			err = reply.Error
+		}
+	}
+	return
 }
 
 type indexServer struct {
