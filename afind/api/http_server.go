@@ -27,12 +27,12 @@ func (s *webServer) Register() {
 	svrIndex := &indexServer{&s.config, s.repos, s.indexer}
 	svrSearch := &searchServer{&s.config, s.repos, s.searcher}
 
-	s.rtr.GET("/repo", svrRepos.webGet)
-	s.rtr.GET("/repo/:key", svrRepos.webGet)
-	s.rtr.DELETE("/repo/:key", svrRepos.webDelete)
+	s.rtr.GET("/api/v1/repo", svrRepos.webGet)
+	s.rtr.GET("/api/v1/repo/:key", svrRepos.webGet)
+	s.rtr.DELETE("/api/v1/repo/:key", svrRepos.webDelete)
 
-	s.rtr.POST("/index", svrIndex.webIndex)
-	s.rtr.POST("/search", svrSearch.webSearch)
+	s.rtr.POST("/api/v1/index", svrIndex.webIndex)
+	s.rtr.POST("/api/v1/search", svrSearch.webSearch)
 }
 
 func (s *webServer) HttpServer(addr string) *http.Server {
