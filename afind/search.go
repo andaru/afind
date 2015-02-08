@@ -19,10 +19,6 @@ type Searcher interface {
 	Search(context.Context, SearchQuery) (*SearchResult, error)
 }
 
-type ChanSearcher interface {
-	Search(ctx context.Context, input <-chan SearchQuery, output chan<- *SearchResult) error
-}
-
 // SearchFunc is the generic backend search function prototype
 type SearchFunc func(SearchQuery, chan *SearchResult) error
 
