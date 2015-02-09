@@ -26,7 +26,7 @@ func (sw stopwatches) Start(name string) (x time.Time) {
 		sw[name] = x
 		return
 	}
-	panic("stopwatch can only be started once:" + name)
+	panic("already started: " + name)
 }
 
 func (sw stopwatches) Stop(name string) time.Duration {
@@ -34,7 +34,7 @@ func (sw stopwatches) Stop(name string) time.Duration {
 		delete(sw, name)
 		return time.Since(started)
 	}
-	panic("stopwatch not started:" + name)
+	panic("not started: " + name)
 }
 
 func New() stopwatches {

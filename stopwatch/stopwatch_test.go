@@ -2,7 +2,6 @@ package stopwatch
 
 import (
 	"testing"
-	"time"
 )
 
 func TestStopWatch(t *testing.T) {
@@ -19,17 +18,36 @@ func TestStopWatch(t *testing.T) {
 }
 
 func TestStopWatchPanic(t *testing.T) {
-	done := make(chan struct{}, 1)
 	defer func() {
 		if r := recover(); r != nil {
-			done <- struct{}{}
+			exp := "not started: will-panic"
+			if act := r.(string); act != exp {
+				t.Errorf("want %s, got %s", exp, act)
+			}
+		} else {
+			t.Error("wanted: a panic, got none")
 		}
 	}()
-	New().Stop("will-panic")
-	timeout := time.After(time.Duration(10 * time.Millisecond))
-	select {
-	case <-timeout:
-		t.Error("did not panic as expected")
-	default:
+	sw := New()
+	sw.Stop("will-panic")
+}
+
+func TestStopWatchDoubleStart(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			exp := "already started: test"
+			if act := r.(string); act != exp {
+				t.Errorf("want %s, got %s", exp, act)
+			}
+		} else {
+			t.Error("wanted: a panic, got none")
+		}
+	}()
+	sw := New()
+	tt := sw.Start("test")
+	if tt.IsZero() {
+		t.Error("got zero stopwatch start time, want non-zero")
 	}
+	// This will trip the panic for a stopwatch being started twice
+	sw.Start("test")
 }
