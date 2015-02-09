@@ -112,7 +112,10 @@ func remoteIndex(s *indexServer, req afind.IndexQuery,
 			defer client.Close()
 
 			ir, err = client.Index(ctx, req)
-			updateRepos(s.repos, map[string]*afind.Repo{ir.Repo.Key: ir.Repo})
+			if ir != nil && ir.Repo != nil {
+				updateRepos(s.repos,
+					map[string]*afind.Repo{ir.Repo.Key: ir.Repo})
+			}
 		}
 		ir.SetError(err)
 

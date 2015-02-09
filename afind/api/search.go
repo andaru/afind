@@ -158,7 +158,9 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 			defer client.Close()
 
 			sr, err = client.Search(ctx, req)
-			updateRepos(s.repos, sr.Repos)
+			if sr != nil {
+				updateRepos(s.repos, sr.Repos)
+			}
 		}
 		if err != nil {
 			sr.Errors[req.Meta.Host()] = errs.NewStructError(err)
