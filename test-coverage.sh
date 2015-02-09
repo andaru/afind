@@ -30,5 +30,4 @@ else
 	goveralls ${token} -coverprofile=concat.out .
 fi
 
-rm -rf ./profile.out
-rm -rf ./concat.out
+find . -type f -name 'profile.out' -exec rm -f \{} \;
