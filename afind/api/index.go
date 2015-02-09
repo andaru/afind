@@ -36,9 +36,7 @@ func (i *IndexerClient) Index(
 	case <-ctx.Done():
 		err = errs.NewTimeoutError("index")
 	case reply := <-indexCall.Done:
-		if reply.Error != nil {
-			err = reply.Error
-		}
+		err = reply.Error
 	}
 	return
 }
@@ -147,6 +145,12 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 	// key already exists on this instance, return it immediately.
 	if r := s.repos.Get(req.Key); r != nil {
 		resp.Repo = r.(*afind.Repo)
+		return
+	}
+
+	// Validate the request
+	if err = req.Normalize(); err != nil {
+		resp.SetError(err)
 		return
 	}
 

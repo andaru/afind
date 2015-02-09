@@ -13,9 +13,6 @@ import (
 )
 
 func setRepos(repos afind.KeyValueStorer) {
-	setrepo := func(r *afind.Repo) {
-		repos.Set(r.Key, r)
-	}
 	repo1 := afind.NewRepo()
 	repo1.Key = "1"
 	repo1.Meta["foo1"] = "bar"
@@ -26,8 +23,8 @@ func setRepos(repos afind.KeyValueStorer) {
 	repo2.Meta["foo1"] = "bar2"
 	repo2.Meta["foo2"] = "bazbar"
 
-	setrepo(repo1)
-	setrepo(repo2)
+	repos.Set(repo1.Key, repo1)
+	repos.Set(repo2.Key, repo2)
 }
 
 func TestGetReposKeys(t *testing.T) {
@@ -164,31 +161,42 @@ func TestGetReposMetaRegexp(t *testing.T) {
 
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
+	request.Meta["foo2"] = "!barbaz"
+	actual8 := getRepos(repos, request)
+	if len(actual8) != 1 {
+		t.Error("want 1 repo, got", len(actual8))
+	}
+	if actual8[0].Key != "2" {
+		t.Error("want repo key 2, got", actual8[0].Key)
+	}
+
+	delete(request.Meta, "foo1")
+	delete(request.Meta, "foo2")
 	// This should match nothing, since it's really "not anything"
 	request.Meta["foo1"] = "!"
-	actual8 := getRepos(repos, request)
-	if len(actual8) != 0 {
-		t.Error("want 0 repos, got", len(actual8))
+	actual9 := getRepos(repos, request)
+	if len(actual9) != 0 {
+		t.Error("want 0 repos, got", len(actual9))
 	}
 
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
 	// This should match only the first repo
 	request.Meta["foo1"] = "!bar2"
-	actual9 := getRepos(repos, request)
-	if len(actual9) != 1 {
-		t.Error("want 1 repo, got", len(actual9))
-	} else if actual9[0].Key != "1" {
-		t.Error("expected repo key 1, got", actual9[0].Key)
+	actual10 := getRepos(repos, request)
+	if len(actual10) != 1 {
+		t.Error("want 1 repo, got", len(actual10))
+	} else if actual10[0].Key != "1" {
+		t.Error("expected repo key 1, got", actual10[0].Key)
 	}
 
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
 	// This should match everything, since it's really "not nothing"
 	request.Meta["foo1"] = "!^$"
-	actual10 := getRepos(repos, request)
-	if len(actual10) != 2 {
-		t.Error("want 2 repos, got", len(actual10))
+	actual11 := getRepos(repos, request)
+	if len(actual11) != 2 {
+		t.Error("want 2 repos, got", len(actual11))
 	}
 }
 
@@ -213,8 +221,8 @@ func TestGetReposEmptyOtherKeys(t *testing.T) {
 
 type testSystem struct {
 	repos     afind.KeyValueStorer
-	indexer   afind.Indexer
-	searcher  afind.Searcher
+	indexer   testIndexer
+	searcher  testSearcher
 	config    afind.Config
 	server    *baseServer
 	rpcServer *RpcServer
@@ -246,18 +254,9 @@ func getTestConfigHostPort(host, port string) (c afind.Config) {
 	return c
 }
 
-type testIndexer struct {
-	called map[string]int
-	lock   *sync.Mutex
-}
-
 type testSearcher struct {
 	called map[string]int
 	lock   *sync.Mutex
-}
-
-func newTestIndexer() testIndexer {
-	return testIndexer{map[string]int{}, &sync.Mutex{}}
 }
 
 func newTestSearcher() testSearcher {
@@ -280,30 +279,8 @@ func (i testSearcher) Search(
 	// match the request against our list of responses to return
 	key := query.RepoKeys[0] + "_" + query.Re
 	sr = ktSearchQueries[key]
-	log.Debug("fucker fucker fucker key=%#v sr=%#v", key, sr)
 	if sr == nil {
 		panic("unknown result for key: " + key)
-	}
-	return
-}
-
-func (i testIndexer) Index(
-	ctx context.Context,
-	req afind.IndexQuery) (ir *afind.IndexResult, err error) {
-
-	i.called["Index"]++
-	ir = afind.NewIndexResult()
-	ir.Repo = &afind.Repo{
-		Key:             "key",
-		IndexPath:       "indexpath",
-		Root:            "root",
-		Meta:            afind.Meta{"foo": "bar"},
-		State:           afind.OK,
-		NumFiles:        123,
-		SizeIndex:       afind.ByteSize(131072),
-		SizeData:        afind.ByteSize(1025 * 1024),
-		NumShards:       4,
-		ElapsedIndexing: time.Duration(1 * time.Second),
 	}
 	return
 }
@@ -330,9 +307,8 @@ func newRpcServer(t *testing.T, c afind.Config) testSystem {
 	sys.rpcServer = rpcServer
 	rpcServer.Register()
 	go func() {
-		err = rpcServer.Serve()
-		if err != nil {
-			t.Fatal("rpcServer.Server() unexpected:", err)
+		if e := rpcServer.Serve(); e != nil {
+			t.Log("rpcServer.Serve() returned error:", e)
 		}
 	}()
 	return sys
@@ -473,13 +449,12 @@ func TestRemoteSearch(t *testing.T) {
 	// to the first which will have to proxy the query to the
 	// second. Both servers run on localhost using two different
 	// addresses in 127.0.0.0/8
-
 	fe := newRpcServer(t,
 		getTestConfigHostPort(t_fe_host, t_rpc_port))
-	defer fe.rpcServer.CloseNoErr()
 	be := newRpcServer(t,
 		getTestConfigHostPort(t_be_host, t_rpc_port))
-	// defer be.rpcServer.CloseNoErr()
+	defer fe.rpcServer.CloseNoErr()
+	defer fe.rpcServer.CloseNoErr()
 
 	// Add the remote repo, which lives on the backend host
 	repo := afind.NewRepo()

@@ -44,28 +44,29 @@ func (s *RpcServer) Register() {
 
 func (s *RpcServer) Serve() error {
 	defer s.CloseNoErr()
-	delay := time.Duration(3 * time.Millisecond)
+	startDelay := time.Duration(3 * time.Millisecond)
+	delay := startDelay
 	max := 5 * time.Second
 	for {
 		select {
 		case <-s.quit:
 			return nil
 		default:
+			rwc, err := s.l.Accept()
+			if err != nil {
+				e, ok := err.(net.Error)
+				if ok && e.Temporary() {
+					if delay *= 2; delay > max {
+						delay = max
+					}
+					time.Sleep(delay)
+					continue
+				}
+				return e
+			}
+			delay = startDelay
+			go s.server.ServeConn(rwc)
 		}
 
-		rwc, err := s.l.Accept()
-		if err != nil {
-			e, ok := err.(net.Error)
-			if ok && e.Temporary() {
-				if delay *= 2; delay > max {
-					delay = max
-				}
-				time.Sleep(delay)
-				continue
-			}
-			return e
-		}
-		delay = 0
-		go s.server.ServeConn(rwc)
 	}
 }

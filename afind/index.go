@@ -164,13 +164,31 @@ func getIndexWriter(ctx context.Context, name string) (index.IndexWriter, error)
 	if f := ctx.Value("IndexWriterFunc"); f != nil {
 		return f.(func(name string) index.IndexWriter)(name), nil
 	}
-	// Use the real implementation as the default IndexWriterFunc.
-	// Create will log.Fatal if name doesn't exist, so try to create
-	// the path first.
-	if err := os.MkdirAll(path.Dir(name), 0755); err != nil && !os.IsExist(err) {
-		return nil, nil
+	// If no overloaded IndexWriterFunc is provided, return the real
+	// implementation, handling filesystem errors during index creation.
+	return getLocalIndexWriter(name)
+}
+
+func getLocalIndexWriter(name string) (ixw index.IndexWriter, err error) {
+	dirname := path.Dir(name)
+	err = os.MkdirAll(dirname, 0755)
+	if err != nil && !os.IsExist(err) {
+		log.Debug("index writer failed to mkdir %v [index name %v]", dirname, name)
+		return nil, err
 	}
-	return index.Create(name), nil
+
+	// Allow panic recovery from within index.Create()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Debug("index.Create panic %#v", r)
+			err = errs.StructError{
+				T: "index_error",
+				M: "failed to create repository index files",
+			}
+		}
+	}()
+	ixw = index.Create(name)
+	return ixw, err
 }
 
 func getFileSystem(ctx context.Context, root string) walkablefs.WalkableFileSystem {
@@ -327,6 +345,12 @@ func indexShard(
 	return func(ctx context.Context) error {
 		numFiles := 0
 		for name := range in {
+			select {
+			case <-ctx.Done():
+				break
+			default:
+			}
+
 			r, err := fs.Open(name)
 			if err == nil {
 				writer.Add(name, r)

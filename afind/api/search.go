@@ -72,9 +72,7 @@ func (s *SearcherClient) Search(
 	case <-ctx.Done():
 		err = errs.NewTimeoutError("search")
 	case reply := <-searchCall.Done:
-		if reply.Error != nil {
-			err = reply.Error
-		}
+		err = reply.Error
 	}
 	return
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"path"
 	"strconv"
 
 	"code.google.com/p/go.net/context"
@@ -59,8 +58,6 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 	resp *SearchResult, err error) {
 
 	sw := stopwatch.New()
-	sw.Start("total")
-
 	resp = NewSearchResult()
 	key := query.firstKey()
 	var post []uint32
@@ -68,24 +65,22 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 	var q *index.Query
 
 	// Setup the RE2 expression text based on query options
-	var re *regexp.Regexp
-	var pathre *regexp.Regexp
-	if re, pathre, err = buildRegexps(&query); err != nil {
+	re, pathre, err := buildRegexps(&query)
+	if err != nil {
 		goto done
 	}
+	s.Regexp = re
 
 	// Attempt to open the index file
 	if ix, err = index.Open(s.filename); err != nil {
+		log.Debug("grep error opening index %v: %v", s.filename, err)
 		goto done
 	}
 
 	// Perform the posting query to get candidate files to grep
 	sw.Start("posting")
-
-	s.Regexp = re
 	q = index.RegexpQuery(re.Syntax)
 	post = ix.PostingQuery(q)
-
 	// Optionally filter the path names in the posting query results
 	if pathre != nil {
 		files := make([]uint32, 0, len(post))
@@ -122,30 +117,24 @@ func (s *grep) search(ctx context.Context, query SearchQuery) (
 			err = e
 		} else {
 			resp.Matches[name] = make(map[string]map[string]string)
-			// insert our repo key to optimise upstream merges
 			resp.Matches[name][key] = matches
 			resp.NumMatches += uint64(n)
 		}
 	}
 
 done:
-	resp.Durations.Search = sw.Stop("total")
 	return
 }
 
 func (s *grep) readfile(name string) (int, map[string]string, error) {
-	fname := path.Join(s.root, name)
-	f, err := s.fs.Open(fname)
+	f, err := s.fs.Open(name)
 	if err != nil {
 		return 0, nil, err
 	}
-	abc := func() {
-		if err := f.Close(); err != nil {
-			log.Critical("readFile close error:", err.Error())
-		}
-	}
-	defer abc() // always be closing
-	return s.reader(f, fname)
+	defer func() {
+		_ = f.Close()
+	}()
+	return s.reader(f, name)
 }
 
 func (s *grep) reader(r io.Reader, name string) (

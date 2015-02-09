@@ -238,7 +238,7 @@ func NewSearcher(cfg *Config, repos KeyValueStorer) searcher {
 func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	resp *SearchResult, err error) {
 
-	log.Info("search [%s] [path %s] local", query.Re, query.PathRe)
+	log.Debug("search [%s] [path %s] local", query.Re, query.PathRe)
 	sw := stopwatch.New()
 	sw.Start("total")
 
@@ -299,23 +299,25 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 
 	// Collect and merge responses
 	for left > 0 {
+		if resp.enoughResults() {
+			goto done
+		}
+
 		select {
 		case <-ctx.Done():
 			err = errs.NewTimeoutError("search")
 			resp.Error = err.Error()
-			left = 0
+			goto done
 		case in := <-ch:
 			resp.Update(in)
-			if resp.enoughResults() {
-				left = 0
-			} else {
-				left--
-			}
+			left--
 		}
 	}
 
 done:
 	resp.Durations.Search = sw.Stop("total")
+	log.Debug("search [%s] [path %s] local done in %v",
+		query.Re, query.PathRe, resp.Durations.Search)
 	return resp, err
 }
 
