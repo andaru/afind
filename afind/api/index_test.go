@@ -53,6 +53,7 @@ func TestIndex(t *testing.T) {
 		t.Error("unexpected error:", err)
 	}
 	afindd := NewIndexerClient(cl)
+	defer afindd.Close()
 
 	// Try some bogus queries first to check validation
 	query := afind.NewIndexQuery("")

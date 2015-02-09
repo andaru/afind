@@ -356,6 +356,8 @@ func TestSearchAgainstEmptyAfindDb(t *testing.T) {
 		t.Error("unexpected error:", err)
 	}
 	afindd := NewSearcherClient(cl)
+	defer afindd.Close()
+
 	query := afind.NewSearchQuery("foo", "", true, []string{})
 	sr, err := afindd.Search(context.Background(), query)
 	// There's nothing in the index yet, but we should get no error.
@@ -394,8 +396,9 @@ func TestSearchSingleRepo(t *testing.T) {
 		t.Error("unexpected error:", err)
 	}
 	afindd := NewSearcherClient(cl)
-	query := afind.NewSearchQuery("empty", "", true, []string{})
+	defer afindd.Close()
 
+	query := afind.NewSearchQuery("empty", "", true, []string{})
 	sr, err := afindd.Search(context.Background(), query)
 	// There's nothing in the index yet, but we should get no error.
 	if err != nil {
@@ -470,6 +473,7 @@ func TestRemoteSearch(t *testing.T) {
 		t.Error("unexpected error:", err)
 	}
 	afindd := NewSearcherClient(cl)
+	defer afindd.Close()
 
 	result := ktSearchQueries["remote1_foo"]
 	result.AddFileRepoMatches(
