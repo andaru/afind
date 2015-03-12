@@ -5,7 +5,6 @@ import (
 
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/walkablefs"
-	//	"github.com/andaru/codesearch/index"
 	"golang.org/x/tools/godoc/vfs/mapfs"
 )
 
@@ -36,7 +35,6 @@ func TestSearchResult(t *testing.T) {
 type _testContext struct {
 	ix     indexer
 	sr     searcher
-	po     poster
 	db     KeyValueStorer
 	config *Config
 	ctx    context.Context
