@@ -124,3 +124,50 @@ func TestRepoJson(t *testing.T) {
 	eq(t, 33, newr.NumFiles)
 	eq(t, 6, newr.NumShards)
 }
+
+func TestReposMatchingMeta(t *testing.T) {
+	db := newDb()
+
+	repo1 := NewRepo()
+	repo1.Key = "repo1"
+	repo1.SetHost("host123")
+
+	repo2 := NewRepo()
+	repo2.Key = "repo2"
+	repo2.SetHost("host12")
+
+	db.Set("repo1", repo1)
+	db.Set("repo2", repo2)
+
+	repos := ReposMatchingMeta(db, Meta{"host": "host123"}, false)
+	if len(repos) != 1 {
+		t.Error("want 1 repo, got", len(repos))
+	} else if repos[0].Key != "repo1" {
+		t.Error("want repo1, got", repos[0].Key)
+	}
+
+	repos = ReposMatchingMeta(db, Meta{"host": "host12"}, false)
+	if len(repos) != 1 {
+		t.Error("want 1 repo, got", len(repos))
+	} else if repos[0].Key != "repo2" {
+		t.Error("want repo2, got", repos[0].Key)
+	}
+
+	// test using regexp value matches
+	repos = ReposMatchingMeta(db, Meta{"host": "host12"}, true)
+	if len(repos) != 2 {
+		t.Error("want 2 repos, got", len(repos))
+	}
+	repos = ReposMatchingMeta(db, Meta{"host": ""}, true)
+	if len(repos) != 2 {
+		t.Error("want 2 repos, got", len(repos))
+	}
+	repos = ReposMatchingMeta(db, Meta{"host": "^host"}, true)
+	if len(repos) != 2 {
+		t.Error("want 2 repos, got", len(repos))
+	}
+	repos = ReposMatchingMeta(db, Meta{"host": "123"}, true)
+	if len(repos) != 1 {
+		t.Error("want 1 repo, got", len(repos))
+	}
+}

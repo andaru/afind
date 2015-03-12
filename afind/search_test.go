@@ -36,6 +36,7 @@ func TestSearchResult(t *testing.T) {
 type _testContext struct {
 	ix     indexer
 	sr     searcher
+	po     poster
 	db     KeyValueStorer
 	config *Config
 	ctx    context.Context
@@ -102,9 +103,10 @@ func TestSearch(t *testing.T) {
 	if sr.Error != "" {
 		t.Error("want no error, got", sr.Error)
 	}
-	if sr.Errors[kixKey1] != nil {
-		t.Errorf("want no repo error for %v, got %v",
-			kixKey1, sr.Errors[kixKey1])
+	e, haserr := sr.Errors[kixKey1]
+	if haserr {
+		t.Errorf("want no repo error for %v, got %#v",
+			kixKey1, e)
 	}
 
 	// Should match things now

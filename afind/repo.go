@@ -175,3 +175,26 @@ func (r *Repo) UnmarshalJSON(b []byte) (err error) {
 	}
 	return
 }
+
+// ReposMatchingMeta returns a slice of pointers to repos matching the metadata.
+func ReposMatchingMeta(repos KeyValueStorer, meta Meta, metaRegexp bool) []*Repo {
+	// Filter all available Repo against request
+	// metadata. Values in the Meta are considered regular
+	// expressions, if request.MetaRegexpMatch is set. If not
+	// set, Meta values are treated as exact strings to filter
+	// for. Only matching keys are considered, so filters that do
+	// not appear in the Repo pass the filter.
+	result := []*Repo{}
+	repos.ForEach(func(key string, value interface{}) bool {
+		r := value.(*Repo)
+		if !metaRegexp && r.Meta.Matches(meta) {
+			// Exact string match
+			result = append(result, r)
+		} else if metaRegexp && r.Meta.MatchesRegexp(meta) {
+			// Regular expression match
+			result = append(result, r)
+		}
+		return true
+	})
+	return result
+}

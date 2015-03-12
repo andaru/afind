@@ -28,10 +28,12 @@ func (s *SearcherClient) Close() {
 }
 
 // returns a slice of Repo relevant to this search query
-func getRepos(rstore afind.KeyValueStorer, request afind.SearchQuery) []*afind.Repo {
-	repos := make([]*afind.Repo, 0)
+func getRepos(
+	rstore afind.KeyValueStorer,
+	request afind.SearchQuery) (repos []*afind.Repo) {
 
-	// Either select specific requested repo keys from the database
+	// Either select specific requested repo keys...
+	repos = []*afind.Repo{}
 	for _, key := range request.RepoKeys {
 		if value := rstore.Get(key); value != nil {
 			repos = append(repos, value.(*afind.Repo))
@@ -40,26 +42,9 @@ func getRepos(rstore afind.KeyValueStorer, request afind.SearchQuery) []*afind.R
 	if len(request.RepoKeys) > 0 {
 		return repos
 	}
-
-	// Otherwise, filter all available Repo against request
-	// Metadata. Values in the Meta are considered regular
-	// expressions, if request.MetaRegexpMatch is set. If not
-	// set, Meta values are treated as exact strings to filter
-	// for. Only matching keys are considered, so filters that do
-	// not appear in the Repo pass the filter.
-	rstore.ForEach(func(key string, value interface{}) bool {
-		r := value.(*afind.Repo)
-		if !request.MetaRegexpMatch && r.Meta.Matches(request.Meta) {
-			// Exact string match
-			repos = append(repos, r)
-		} else if request.MetaRegexpMatch && r.Meta.MatchesRegexp(request.Meta) {
-			// Regular expression match
-			repos = append(repos, r)
-		}
-		return true
-	})
-
-	return repos
+	// ...or select repos matching the provided metadata. All
+	// repos are selected if no metadata is provided.
+	return afind.ReposMatchingMeta(rstore, request.Meta, request.MetaRegexpMatch)
 }
 
 func (s *SearcherClient) Search(
@@ -183,20 +168,25 @@ func timeoutSearch(req afind.SearchQuery, cfg *afind.Config) time.Duration {
 	return req.Timeout
 }
 
-func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
-	resp *afind.SearchResult, err error) {
-
-	msg := "search [" + req.Re + "]"
+func logmsgSearch(req afind.SearchQuery) string {
+	msg := "[" + req.Re + "]"
 	if req.IgnoreCase {
 		msg += " ignore-case"
 	}
 	if req.PathRe != "" {
 		msg += " path-re [" + req.PathRe + "]"
 	}
-	log.Info(msg)
+	return msg
+}
+
+func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
+	resp *afind.SearchResult, err error) {
 
 	sw := stopwatch.New()
 	sw.Start("total")
+	msg := logmsgSearch(req)
+	log.Info("search %s", msg)
+
 	resp = afind.NewSearchResult()
 	resp.MaxMatches = req.MaxMatches
 	// Get a request context
@@ -221,20 +211,24 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	}
 	close(reqch)
 
+	// Execute the requests
 	err = par.Requests(reqch).WithConcurrency(s.cfg.MaxSearchC).DoWithContext(ctx)
 	close(ch)
 
-	// Merge the incoming results
+	// Merge the incoming results, stopping once we've received enough.
 	for in := range ch {
-		resp.Update(in)
+		if resp.Update(in) {
+			log.Debug("search %s max_matches(%d) reached", msg, req.MaxMatches)
+			break
+		}
 	}
 	resp.Durations.Search = sw.Stop("total")
 	if resp.Error == "" {
-		msg = "done"
+		msg += " ok"
 	} else {
-		msg = "error"
+		msg += " error"
 	}
-	log.Info("search [%s] %s %v", req.Re, msg, resp.Durations.Search)
+	log.Info("search %s (%v)", msg, resp.Durations.Search)
 	return
 }
 

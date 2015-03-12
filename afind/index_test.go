@@ -64,8 +64,8 @@ func TestNormalize(t *testing.T) {
 	q.Key = ""
 	if err := q.Normalize(); err != nil && !errs.IsValueError(err) {
 		t.Errorf("want a ValueError, got %v", err)
-	} else if err != nil && !strings.Contains(err.Error(), "Key must not be empty") {
-		t.Errorf("want a ValueError about the key being empty, got %v", err)
+	} else if err != nil && !strings.Contains(err.Error(), "Value must not be empty") {
+		t.Errorf("want a ValueError about the key's value being empty, got %v", err)
 	}
 
 	// Fix the first error
@@ -80,7 +80,7 @@ func TestNormalize(t *testing.T) {
 	q.Root = ".not_absolute"
 	if err := q.Normalize(); err != nil && !errs.IsValueError(err) {
 		t.Errorf("want a ValueError, got %v", err)
-	} else if err != nil && !strings.Contains(err.Error(), "Root must be an absolute path") {
+	} else if err != nil && !strings.Contains(err.Error(), "Value must be an absolute path name") {
 		t.Errorf("want a ValueError about an absolute path, got %v", err)
 	}
 

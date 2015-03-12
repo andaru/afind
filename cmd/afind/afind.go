@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/rpc"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,8 @@ var (
 	// Master flagset options
 	// Afind master to connect to
 	flagRpcAddress = flag.String("server", "", "Afind server RPC address")
+	// Verbose output mode
+	flagVerbose = flag.Bool("v", false, "Verbose output")
 
 	// Search flagset options (for afind search -opt)
 	flagSetSearch = flag.NewFlagSet("search", flag.ExitOnError)
@@ -204,12 +207,16 @@ func search(c *ctx, query string) error {
 	}
 	request.Context = getSearchContext()
 	sr, err := c.searcher.Search(context.Background(), request)
+	fmt.Printf("sr is: %#v\n", sr)
+	fmt.Printf("err is: %#v\n", err)
 	// now print the matches
 	printMatches(sr)
 	// print per repo errors, if any were found
 	printErrors(sr)
-	// print repo information
-	printRepos(sr)
+	if *flagVerbose {
+		// print repo information
+		printRepos(sr)
+	}
 
 	if sr.Error != "" {
 		err = errors.New(sr.Error)
@@ -217,14 +224,28 @@ func search(c *ctx, query string) error {
 	return err
 }
 
-func index(c *ctx, key, root string, subdirs []string) error {
+func index(c *ctx, key, root string, dirsOrFiles []string) error {
 	request := afind.IndexQuery{
 		Key:     key,
 		Root:    root,
-		Dirs:    subdirs,
+		Dirs:    []string{},
+		Files:   []string{},
 		Meta:    afind.Meta(flagMeta),
 		Recurse: true,
 	}
+	// Scan the dirsOrFiles to see which are which, and add them
+	// appropriately to the request
+	for _, path := range dirsOrFiles {
+		fullpath := filepath.Join(root, path)
+		if fi, err := os.Lstat(fullpath); err != nil {
+			if fi.IsDir() {
+				request.Dirs = append(request.Dirs, path)
+			} else {
+				request.Files = append(request.Files, path)
+			}
+		}
+	}
+
 	ir, err := c.indexer.Index(context.Background(), request)
 	if ir.Repo != nil {
 		fmt.Printf("index [%s] done in %v\n",
@@ -315,9 +336,9 @@ func doAfind() error {
 		}
 		key := args[0]
 		root := args[1]
-		subdirs := args[2:]
+		dirsOrFiles := args[2:]
 		if err = setupContext(context); err == nil {
-			return index(context, key, root, subdirs)
+			return index(context, key, root, dirsOrFiles)
 		}
 	case "search":
 		err = flagSetSearch.Parse(args)
@@ -382,7 +403,7 @@ func printErrors(sr *afind.SearchResult) {
 		}
 	}
 	for key, err := range sr.Errors {
-		if err != (*errs.StructError)(nil) {
+		if err.T != "" {
 			pfirst()
 			fmt.Printf("repo %s [%s]", key, err.Type())
 			if err.Message() != "" {
@@ -400,7 +421,7 @@ func printErrors(sr *afind.SearchResult) {
 func printRepos(sr *afind.SearchResult) {
 	fmt.Println("Repos in result:")
 	for _, repo := range sr.Repos {
-		repoAsString(repo)
+		fmt.Println(repoAsString(repo))
 	}
 }
 

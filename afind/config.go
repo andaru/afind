@@ -3,6 +3,7 @@ package afind
 import (
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/andaru/afind/utils"
@@ -42,6 +43,17 @@ type Config struct {
 const (
 	defaultTimeoutIndex  = 1800 * time.Second
 	defaultTimeoutSearch = 30 * time.Second
+)
+
+var (
+	localHostnames = map[string]interface{}{
+		"":          nil,
+		"localhost": nil,
+		// other hosts in 127/8 are not considered local,
+		// allowing one host to test distributed requests
+		"127.0.0.1": nil,
+		"::1":       nil,
+	}
 )
 
 func (c *Config) SetVerbose(verbose bool) {
@@ -89,4 +101,19 @@ func (c *Config) Host() string {
 
 func (c *Config) ListenerRpc() (l net.Listener, err error) {
 	return net.Listen("tcp", c.RpcBind)
+}
+
+// IsHostLocal returns whether the passed in hostname is
+// considered to be local to this machine
+func (c *Config) IsHostLocal(host string) bool {
+	if _, ok := localHostnames[host]; ok {
+		return true
+	} else if host == c.Host() {
+		return true
+	} else if strings.HasPrefix(c.Host(), host+".") {
+		// allow the local domain to be stripped from repo
+		// metadata and still match locally.
+		return true
+	}
+	return false
 }

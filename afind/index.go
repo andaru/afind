@@ -66,7 +66,7 @@ const (
 // Sets the error string on the IndexResult if the error passed is not
 // nil, else is a no-op.
 func (ir *IndexResult) SetError(err error) {
-	if e, ok := err.(*errs.StructError); ok && e != nil {
+	if e, ok := err.(*errs.StructError); ok {
 		ir.Error = e
 	} else if err != nil {
 		ir.Error = errs.NewStructError(err)
@@ -89,14 +89,14 @@ func NewIndexQuery(key string) IndexQuery {
 func (r *IndexQuery) Normalize() error {
 	// Validate
 	if r.Key == "" {
-		return errs.NewValueError("key", "Key must not be empty")
-	} else if len(r.Dirs) == 0 {
+		return errs.NewValueError("key", "Value must not be empty")
+	} else if len(r.Dirs) == 0 && len(r.Files) == 0 {
 		return errs.NewValueError(
 			"dirs",
-			"Must provide one one more sub dirs (such as [`.`])")
+			"Must provide at least one `files` or `dirs` to index")
 	} else if !path.IsAbs(r.Root) {
 		return errs.NewValueError(
-			"root", "Root must be an absolute path")
+			"root", "Value must be an absolute path name")
 	}
 	// Confirm all sub directories provided are not absolute, and remove
 	// any duplicate paths to avoid duplicate indexing of files.
@@ -290,6 +290,7 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 			repo.NumFiles, repo.SizeData, repo.SizeIndex)
 	}
 	log.Info("index [%v] %v [%v]", req.Key, msg, repo.ElapsedIndexing)
+	log.Debug("index result %#v", resp)
 	return
 }
 

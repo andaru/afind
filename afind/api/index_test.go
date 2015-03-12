@@ -61,7 +61,7 @@ func TestIndex(t *testing.T) {
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
-	experr := "Argument 'key' value is invalid: Key must not be empty"
+	experr := "Argument 'key' value is invalid: Value must not be empty"
 	if ir.Error.Message() != experr {
 		t.Error("want empty key error, got", ir.Error)
 	}

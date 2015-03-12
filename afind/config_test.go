@@ -1,8 +1,9 @@
 package afind
 
 import (
-	"github.com/andaru/afind/utils"
 	"testing"
+
+	"github.com/andaru/afind/utils"
 )
 
 func newConfig() Config {
@@ -49,4 +50,13 @@ func TestListenerRpc(t *testing.T) {
 	neq(t, listenah.Addr().String(), "")
 	eq(t, err, nil)
 	_ = listenah.Close()
+}
+
+func TestIsHostLocal(t *testing.T) {
+	c := newConfig()
+	hostname := c.Host()
+	eq(t, true, c.IsHostLocal(hostname))
+	eq(t, true, c.IsHostLocal("localhost"))
+	eq(t, true, c.IsHostLocal(""))
+	eq(t, false, c.IsHostLocal("__cannot_be_this__"))
 }

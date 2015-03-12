@@ -111,7 +111,6 @@ type SearchResult struct {
 	Errors map[string]*errs.StructError `json:"errors,omitempty"`
 
 	// A global error that occured prior to executing any search query.
-	// If Error is set, Matches will be empty.
 	Error string `json:"error,omitempty"`
 
 	// Number of lines matching the regular expression query. This
@@ -155,23 +154,7 @@ func (sr *SearchResult) SetError(err error) {
 }
 
 // Updates the SearchResult from the contents of other
-func (r *SearchResult) Update(other *SearchResult) {
-	enough := false
-	for file, rmatches := range other.Matches {
-		if enough {
-			break
-		} else if len(rmatches) == 0 {
-			continue
-		}
-		for repo, matches := range rmatches {
-			if len(matches) == 0 {
-				continue
-			}
-			if enough = !r.AddFileRepoMatches(file, repo, matches); enough {
-				break
-			}
-		}
-	}
+func (r *SearchResult) Update(other *SearchResult) (enough bool) {
 	// Copy errors and repository information
 	for k, v := range other.Errors {
 		r.Errors[k] = v
@@ -189,13 +172,31 @@ func (r *SearchResult) Update(other *SearchResult) {
 
 	r.Durations.CombinedSearch += other.Durations.Search
 	r.Durations.CombinedPostingQuery += other.Durations.PostingQuery
+
+	// Copy matches
+	for file, rmatches := range other.Matches {
+		for repo, matches := range rmatches {
+			if enough = r.AddFileRepoMatches(file, repo, matches); enough {
+				return
+			}
+		}
+	}
+	return
 }
 
 func (r *SearchResult) enoughResults() bool {
 	return r.MaxMatches > 0 && r.NumMatches >= r.MaxMatches
 }
 
-func (r *SearchResult) AddFileRepoMatches(fname, repokey string, matches fileMap) bool {
+func (r *SearchResult) AddFileRepoMatches(
+	fname, repokey string,
+	matches fileMap) (enough bool) {
+
+	if len(matches) == 0 {
+		// we cannot have 'gone over' the limit with zero matches
+		return false
+	}
+
 	if _, ok := r.Matches[fname]; !ok {
 		r.Matches[fname] = make(map[string]map[string]string)
 	}
@@ -206,11 +207,12 @@ func (r *SearchResult) AddFileRepoMatches(fname, repokey string, matches fileMap
 	for k, v := range matches {
 		r.Matches[fname][repokey][k] = v
 		r.NumMatches++
-		if r.enoughResults() {
-			return false
+		enough = r.enoughResults()
+		if enough {
+			break
 		}
 	}
-	return true
+	return
 }
 
 // The Searcher implementation
@@ -238,7 +240,7 @@ func NewSearcher(cfg *Config, repos KeyValueStorer) searcher {
 func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	resp *SearchResult, err error) {
 
-	log.Debug("search [%s] [path %s] local", query.Re, query.PathRe)
+	log.Info("search [%s] [path %s] local", query.Re, query.PathRe)
 	sw := stopwatch.New()
 	sw.Start("total")
 
@@ -263,10 +265,11 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 			errs.NewRepoUnavailableError())
 		goto done
 	}
-	if repo = irepo.(*Repo); repo.State == INDEXING {
+	repo = irepo.(*Repo)
+	resp.Repos[repokey] = repo
+	if repo.State == INDEXING {
 		goto done
-	}
-	if repo.State != OK {
+	} else if repo.State != OK {
 		resp.Errors[repokey] = errs.NewStructError(
 			errs.NewRepoUnavailableError())
 		goto done
@@ -316,7 +319,7 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 
 done:
 	resp.Durations.Search = sw.Stop("total")
-	log.Debug("search [%s] [path %s] local done in %v",
+	log.Info("search [%s] [path %s] local done (%v)",
 		query.Re, query.PathRe, resp.Durations.Search)
 	return resp, err
 }
