@@ -2,7 +2,6 @@ package afind
 
 import (
 	"os"
-	"strings"
 	"time"
 
 	"code.google.com/p/go.net/context"
@@ -145,16 +144,8 @@ func NewSearchResult() *SearchResult {
 	}
 }
 
-// Sets the error string on the SearchResult if the error passed is not
-// nil, else is a no-op.
-func (sr *SearchResult) SetError(err error) {
-	if err != nil {
-		sr.Error = err.Error()
-	}
-}
-
-// Updates the SearchResult from the contents of other
-func (r *SearchResult) Update(other *SearchResult) (enough bool) {
+// Updates the SearchResult from the contents of other.
+func (r *SearchResult) Update(other *SearchResult) {
 	// Copy errors and repository information
 	for k, v := range other.Errors {
 		r.Errors[k] = v
@@ -162,39 +153,38 @@ func (r *SearchResult) Update(other *SearchResult) (enough bool) {
 	for k, v := range other.Repos {
 		r.Repos[k] = v
 	}
-
-	// Append unique messages to the global error string
 	if r.Error == "" {
 		r.Error = other.Error
-	} else if other.Error != "" && !strings.HasSuffix(r.Error, other.Error) {
+	} else {
 		r.Error += "\n" + other.Error
 	}
 
+	// Combine durations
 	r.Durations.CombinedSearch += other.Durations.Search
 	r.Durations.CombinedPostingQuery += other.Durations.PostingQuery
 
 	// Copy matches
 	for file, rmatches := range other.Matches {
 		for repo, matches := range rmatches {
-			if enough = r.AddFileRepoMatches(file, repo, matches); enough {
-				return
-			}
+			r.AddFileRepoMatches(file, repo, matches)
 		}
 	}
-	return
 }
 
 func (r *SearchResult) enoughResults() bool {
 	return r.MaxMatches > 0 && r.NumMatches >= r.MaxMatches
 }
 
+func (r SearchResult) EnoughResults() bool {
+	return r.enoughResults()
+}
+
 func (r *SearchResult) AddFileRepoMatches(
 	fname, repokey string,
-	matches fileMap) (enough bool) {
+	matches fileMap) {
 
 	if len(matches) == 0 {
-		// we cannot have 'gone over' the limit with zero matches
-		return false
+		return
 	}
 
 	if _, ok := r.Matches[fname]; !ok {
@@ -207,12 +197,7 @@ func (r *SearchResult) AddFileRepoMatches(
 	for k, v := range matches {
 		r.Matches[fname][repokey][k] = v
 		r.NumMatches++
-		enough = r.enoughResults()
-		if enough {
-			break
-		}
 	}
-	return
 }
 
 // The Searcher implementation
@@ -302,15 +287,10 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 
 	// Collect and merge responses
 	for left > 0 {
-		if resp.enoughResults() {
-			goto done
-		}
-
 		select {
 		case <-ctx.Done():
-			err = errs.NewTimeoutError("search")
-			resp.Error = err.Error()
-			goto done
+			resp.Errors[repokey] = errs.NewStructError(errs.NewTimeoutError("search"))
+			left = 0
 		case in := <-ch:
 			resp.Update(in)
 			left--
@@ -319,8 +299,11 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 
 done:
 	resp.Durations.Search = sw.Stop("total")
-	log.Info("search [%s] [path %s] local done (%v)",
-		query.Re, query.PathRe, resp.Durations.Search)
+	log.Info("search [%s] [path %s] local done errors=%v (%v)",
+		query.Re, query.PathRe, resp.Errors, resp.Durations.Search)
+	if err != nil {
+		log.Error("search [%s] [path %s] error %v", query.Re, query.PathRe, err)
+	}
 	return resp, err
 }
 

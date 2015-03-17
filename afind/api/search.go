@@ -73,7 +73,9 @@ func (s *searchServer) Search(args afind.SearchQuery,
 	reply *afind.SearchResult) (err error) {
 	timeout := timeoutSearch(args, s.cfg)
 	sr, err := doSearch(s, args, timeout)
-	sr.SetError(err)
+	if err != nil {
+		sr.Error = err.Error()
+	}
 	*reply = *sr
 	return
 }
@@ -217,7 +219,9 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 
 	// Merge the incoming results, stopping once we've received enough.
 	for in := range ch {
-		if resp.Update(in) {
+		log.Debug("search %s backend (%d matches)", msg, in.NumMatches)
+		resp.Update(in)
+		if resp.EnoughResults() {
 			log.Debug("search %s max_matches(%d) reached", msg, req.MaxMatches)
 			break
 		}
