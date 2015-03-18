@@ -8,7 +8,7 @@ func TestCounters(t *testing.T) {
 	counters := New().Start()
 
 	done := make(chan bool)
-	n := 20000
+	n := 20
 	for i := 0; i < n; i++ {
 		go func() {
 			counters.Inc("key2", 50)

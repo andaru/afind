@@ -2,6 +2,7 @@ package afind
 
 import (
 	"os"
+	"sync"
 	"time"
 
 	"code.google.com/p/go.net/context"
@@ -17,6 +18,12 @@ import (
 type Searcher interface {
 	Search(context.Context, SearchQuery) (*SearchResult, error)
 }
+
+var (
+	kSearchTimeoutError   = errs.NewStructError(errs.NewTimeoutError("search"))
+	kRepoUnavailableError = errs.NewStructError(errs.NewRepoUnavailableError())
+	kRepoKeyEmptyError    = errs.NewStructError(errs.NewValueError("RepoKeys", "Must not be empty"))
+)
 
 // SearchFunc is the generic backend search function prototype
 type SearchFunc func(SearchQuery, chan *SearchResult) error
@@ -225,76 +232,87 @@ func NewSearcher(cfg *Config, repos KeyValueStorer) searcher {
 func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	resp *SearchResult, err error) {
 
-	log.Info("search [%s] [path %s] local", query.Re, query.PathRe)
 	sw := stopwatch.New()
 	sw.Start("total")
 
 	var repo *Repo
 	var shards []string
 	var irepo interface{}
+	var wg sync.WaitGroup
+
 	resp = NewSearchResult()
-	ch := make(chan *SearchResult, 1)
-	left := 0
+	ch := make(chan *SearchResult, 10)
 
 	// If the repo is not found or is not available to search,
 	// exit with a RepoUnavailable error. Ignore repo being
 	// indexed currently.
 	repokey := query.firstKey()
+	log.Info("search [%s] [path %s] local repo=%v", query.Re, query.PathRe, repokey)
+
 	if repokey == "" {
-		resp.Error = "SearchQuery must have a non-empty RepoKeys"
+		resp.Error = kRepoKeyEmptyError.Error()
+		log.Debug("search backend error %v", resp.Error)
 		goto done
 	}
 	irepo = s.repos.Get(repokey)
 	if irepo == nil {
-		resp.Errors[repokey] = errs.NewStructError(
-			errs.NewRepoUnavailableError())
+		resp.Errors[repokey] = kRepoUnavailableError
 		goto done
 	}
 	repo = irepo.(*Repo)
 	resp.Repos[repokey] = repo
 	if repo.State == INDEXING {
+		// The repo is indexing; we won't copy it to the output
 		goto done
 	} else if repo.State != OK {
-		resp.Errors[repokey] = errs.NewStructError(
-			errs.NewRepoUnavailableError())
+		// Otherwise, we saw an error
+		resp.Errors[repokey] = kRepoUnavailableError
 		goto done
 	}
 
 	shards = repo.Shards()
-	left = len(shards)
-	defer close(ch)
-
 	for _, shard := range shards {
+		wg.Add(1)
+
 		go func(r *Repo, fname string) {
 			sr, e := searchLocal(ctx, query, r, fname)
+			sr.Repos[r.Key] = r
+			if sr.NumMatches > 0 {
+				log.Debug("search backend done [%s] %d matches (%v)",
+					query.Re, sr.NumMatches, sr.Durations.Search)
+			}
 			if e != nil {
+				// Report the error
+				sr.Errors[r.Key] = errs.NewStructError(e)
+
 				// Maybe mark the repo as errored (unavailable)
 				if os.IsNotExist(e) || os.IsPermission(e) {
 					r.State = ERROR
 					_ = s.repos.Set(r.Key, r)
 				}
-				sr.Error = e.Error()
-				sr.Repos[r.Key] = r
 			}
 			select {
 			case <-ctx.Done():
-				return
+				// Report the timeout
+				resp.Errors[repokey] = kSearchTimeoutError
 			default:
 				ch <- sr
 			}
+
+			// Notify completion after potentially sending on the channel
+			wg.Done()
+
 		}(repo, shard)
 	}
 
+	// Await goroutine completion either in error or otherwise
+	wg.Wait()
+	close(ch)
+
 	// Collect and merge responses
-	for left > 0 {
-		select {
-		case <-ctx.Done():
-			resp.Errors[repokey] = errs.NewStructError(errs.NewTimeoutError("search"))
-			left = 0
-		case in := <-ch:
-			resp.Update(in)
-			left--
-		}
+	for in := range ch {
+		log.Debug("in=%#v", in)
+		resp.Update(in)
 	}
 
 done:

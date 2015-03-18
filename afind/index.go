@@ -294,8 +294,12 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	return
 }
 
+var (
+	strPathSeparator = string(os.PathSeparator)
+)
+
 func trimLeadingSlash(name string) string {
-	return strings.TrimPrefix(name, string(os.PathSeparator))
+	return strings.TrimPrefix(name, strPathSeparator)
 }
 
 // The scanner returns files eligible for indexing

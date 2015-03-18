@@ -85,7 +85,7 @@ func TestSearch(t *testing.T) {
 	// Should produce an error due to no repokeys
 	query := NewSearchQuery("^foo", "", true, []string{})
 	sr, err := test.sr.Search(test.ctx, query)
-	if sr.Error != "SearchQuery must have a non-empty RepoKeys" {
+	if sr.Error != kRepoKeyEmptyError.Error() {
 		t.Errorf("expected missing RepoKeys error, got '%s'", sr.Error)
 	}
 
