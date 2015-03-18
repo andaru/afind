@@ -219,7 +219,6 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 
 	// Merge the incoming results, stopping once we've received enough.
 	for in := range ch {
-		log.Debug("search %s backend (%d matches)", msg, in.NumMatches)
 		resp.Update(in)
 		if resp.EnoughResults() {
 			log.Debug("search %s max_matches(%d) reached", msg, req.MaxMatches)
