@@ -217,12 +217,10 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	err = par.Requests(reqch).WithConcurrency(s.cfg.MaxSearchC).DoWithContext(ctx)
 	close(ch)
 
-	// Merge the incoming results, stopping once we've received enough.
+	// Merge the incoming results until we have enough.
 	for in := range ch {
-		resp.Update(in)
-		if resp.EnoughResults() {
-			log.Debug("search %s max_matches(%d) reached", msg, req.MaxMatches)
-			break
+		if !resp.EnoughResults() {
+			resp.Update(in)
 		}
 	}
 	resp.Durations.Search = sw.Stop("total")
