@@ -137,7 +137,6 @@ func localSearch(s *searchServer, req afind.SearchQuery,
 
 func remoteSearch(s *searchServer, req afind.SearchQuery,
 	results chan *afind.SearchResult) par.RequestFunc {
-	log.Debug("query=%#v", req)
 
 	addr := getAddress(req.Meta, s.cfg.PortRpc())
 	return func(ctx context.Context) error {
@@ -158,8 +157,11 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 
 		select {
 		case <-ctx.Done():
-			return nil
 		default:
+			if len(sr.Matches) > 0 {
+				log.Debug("backend %v (%d matches)",
+					addr, len(sr.Matches))
+			}
 			results <- sr
 		}
 		return nil
