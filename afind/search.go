@@ -271,9 +271,8 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	}
 
 	shards = repo.Shards()
+	wg.Add(len(shards))
 	for _, shard := range shards {
-		wg.Add(1)
-
 		go func(r *Repo, fname string) {
 			sr, e := searchLocal(ctx, query, r, fname)
 			sr.Repos[r.Key] = r
@@ -318,10 +317,7 @@ done:
 	resp.Durations.Search = sw.Stop("total")
 	log.Info("search [%s] [path %s] local done %d matches errors=%v (%v)",
 		query.Re, query.PathRe, resp.NumMatches, resp.Errors, resp.Durations.Search)
-	if err != nil {
-		log.Error("search [%s] [path %s] error %v", query.Re, query.PathRe, err)
-	}
-	return resp, err
+	return
 }
 
 // search an individiaul afindex search for the repo for the request

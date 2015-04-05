@@ -12,13 +12,14 @@ import (
 // Afind configuration file definition and handling
 
 type Config struct {
-	IndexInRepo bool   // the index file is placed in Repo's Root if true
-	IndexRoot   string // path for index files if IndexInRepo is false
-	HttpBind    string // HTTP bind address (e.g. ":80" or "0.0.0.0:80")
-	HttpsBind   string // HTTPs bind address
-	RpcBind     string // Gob RPC bind address
-	NumShards   int    // number of index shards to create per Repo
-	MaxSearchC  int    // Maximum search concurrency
+	IndexInRepo   bool   // the index file is placed in Repo's Root if true
+	IndexRoot     string // path for index files if IndexInRepo is false
+	HttpBind      string // HTTP bind address (e.g. ":80" or "0.0.0.0:80")
+	HttpsBind     string // HTTPs bind address
+	RpcBind       string // Gob RPC bind address
+	NumShards     int    // number of index shards to create per Repo
+	MaxSearchC    int    // Maximum search concurrency
+	MaxSearchRepo int    // Maximum number of Repo to consider per search
 
 	// Default index and search timeouts, in seconds
 	// If not provided, the defaults below will be used, see

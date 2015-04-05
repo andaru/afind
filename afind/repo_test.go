@@ -139,14 +139,15 @@ func TestReposMatchingMeta(t *testing.T) {
 	db.Set("repo1", repo1)
 	db.Set("repo2", repo2)
 
-	repos := ReposMatchingMeta(db, Meta{"host": "host123"}, false)
+	max := 100
+	repos := ReposMatchingMeta(db, Meta{"host": "host123"}, false, max)
 	if len(repos) != 1 {
 		t.Error("want 1 repo, got", len(repos))
 	} else if repos[0].Key != "repo1" {
 		t.Error("want repo1, got", repos[0].Key)
 	}
 
-	repos = ReposMatchingMeta(db, Meta{"host": "host12"}, false)
+	repos = ReposMatchingMeta(db, Meta{"host": "host12"}, false, max)
 	if len(repos) != 1 {
 		t.Error("want 1 repo, got", len(repos))
 	} else if repos[0].Key != "repo2" {
@@ -154,19 +155,29 @@ func TestReposMatchingMeta(t *testing.T) {
 	}
 
 	// test using regexp value matches
-	repos = ReposMatchingMeta(db, Meta{"host": "host12"}, true)
+	repos = ReposMatchingMeta(db, Meta{"host": "host12"}, true, max)
 	if len(repos) != 2 {
 		t.Error("want 2 repos, got", len(repos))
 	}
-	repos = ReposMatchingMeta(db, Meta{"host": ""}, true)
+	repos = ReposMatchingMeta(db, Meta{"host": ""}, true, max)
 	if len(repos) != 2 {
 		t.Error("want 2 repos, got", len(repos))
 	}
-	repos = ReposMatchingMeta(db, Meta{"host": "^host"}, true)
+	// max of 0 means no limit.
+	repos = ReposMatchingMeta(db, Meta{"host": "^host"}, true, 0)
 	if len(repos) != 2 {
 		t.Error("want 2 repos, got", len(repos))
 	}
-	repos = ReposMatchingMeta(db, Meta{"host": "123"}, true)
+	repos = ReposMatchingMeta(db, Meta{"host": "^host"}, true, 1)
+	if len(repos) != 1 {
+		t.Error("want 1 repo, got", len(repos))
+	}
+	repos = ReposMatchingMeta(db, Meta{"host": "^host"}, true, 2)
+	if len(repos) != 2 {
+		t.Error("want 2 repos, got", len(repos))
+	}
+
+	repos = ReposMatchingMeta(db, Meta{"host": "123"}, true, max)
 	if len(repos) != 1 {
 		t.Error("want 1 repo, got", len(repos))
 	}

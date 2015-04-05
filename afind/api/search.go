@@ -30,7 +30,8 @@ func (s *SearcherClient) Close() {
 // returns a slice of Repo relevant to this search query
 func getRepos(
 	rstore afind.KeyValueStorer,
-	request afind.SearchQuery) (repos []*afind.Repo) {
+	request afind.SearchQuery,
+	max int) (repos []*afind.Repo) {
 
 	// Either select specific requested repo keys...
 	repos = []*afind.Repo{}
@@ -44,7 +45,7 @@ func getRepos(
 	}
 	// ...or select repos matching the provided metadata. All
 	// repos are selected if no metadata is provided.
-	return afind.ReposMatchingMeta(rstore, request.Meta, request.MetaRegexpMatch)
+	return afind.ReposMatchingMeta(rstore, request.Meta, request.MetaRegexpMatch, max)
 }
 
 func (s *SearcherClient) Search(
@@ -116,6 +117,7 @@ func localSearch(s *searchServer, req afind.SearchQuery,
 
 	return func(ctx context.Context) error {
 		sr, err := s.searcher.Search(ctx, req)
+		log.Debug("err=%v sr=%v", err, sr)
 		if err != nil {
 			if len(req.RepoKeys) > 0 {
 				sr.Errors[req.RepoKeys[0]] = errs.NewStructError(err)
@@ -135,6 +137,7 @@ func localSearch(s *searchServer, req afind.SearchQuery,
 
 func remoteSearch(s *searchServer, req afind.SearchQuery,
 	results chan *afind.SearchResult) par.RequestFunc {
+	log.Debug("query=%#v", req)
 
 	addr := getAddress(req.Meta, s.cfg.PortRpc())
 	return func(ctx context.Context) error {
@@ -197,11 +200,12 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 
 	// Determine which repos to search, then search concurrently
 	sw.Start("get_repos")
-	searchRepos := getRepos(s.repos, req)
+	searchRepos := getRepos(s.repos, req, s.cfg.MaxSearchRepo)
 	resp.Durations.GetRepos = sw.Stop("get_repos")
 
 	ch := make(chan *afind.SearchResult, len(searchRepos))
 	reqch := make(chan par.RequestFunc, len(searchRepos))
+	log.Debug("search %d repo (concurrency %d)", len(searchRepos), s.cfg.MaxSearchC)
 	for _, repo := range searchRepos {
 		req.RepoKeys = []string{repo.Key}
 		req.Meta.SetHost(repo.Host())

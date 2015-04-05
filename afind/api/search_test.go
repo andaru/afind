@@ -33,13 +33,13 @@ func TestGetReposKeys(t *testing.T) {
 
 	request1 := afind.SearchQuery{}
 	// should get all keys
-	actual0 := getRepos(repos, request1)
+	actual0 := getRepos(repos, request1, 0)
 	if len(actual0) != repos.Size() {
 		t.Error("want", repos.Size(), "repos, got", len(actual0))
 	}
 	// now select just one repo key
 	request1.RepoKeys = []string{"1"}
-	actual1 := getRepos(repos, request1)
+	actual1 := getRepos(repos, request1, 0)
 	if len(actual1) != 1 {
 		t.Error("want 1 repo, got", len(actual1))
 	} else if actual1[0].Key != "1" {
@@ -47,7 +47,7 @@ func TestGetReposKeys(t *testing.T) {
 	}
 	// select both (all) keys
 	request1.RepoKeys = []string{"1", "2"}
-	actual2 := getRepos(repos, request1)
+	actual2 := getRepos(repos, request1, 0)
 	if len(actual2) != 2 {
 		t.Error("want 2 repo, got", len(actual2))
 	}
@@ -61,13 +61,13 @@ func TestGetReposMeta(t *testing.T) {
 	request1.Meta = make(afind.Meta)
 
 	request1.Meta["foo1"] = "not there"
-	actual0 := getRepos(repos, request1)
+	actual0 := getRepos(repos, request1, 0)
 	if len(actual0) != 0 {
 		t.Error("want 0 repos, got", len(actual0))
 	}
 
 	request1.Meta["foo1"] = "bar"
-	actual1 := getRepos(repos, request1)
+	actual1 := getRepos(repos, request1, 0)
 	if len(actual1) != 1 {
 		t.Error("want 1 repo, got", len(actual1))
 	} else if actual1[0].Key != "1" {
@@ -86,7 +86,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 
 	// Explicitly match nothing
 	request.Meta["foo1"] = "!.*"
-	actual0 := getRepos(repos, request)
+	actual0 := getRepos(repos, request, 0)
 	if len(actual0) != 0 {
 		t.Error("want 0 repos, got", len(actual0))
 	}
@@ -96,7 +96,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
 	request.Meta["foo1"] = "^.ar$"
-	actual1 := getRepos(repos, request)
+	actual1 := getRepos(repos, request, 0)
 	if len(actual1) != 1 {
 		t.Error("want 1 repo, got", len(actual1))
 	} else if actual1[0].Key != "1" {
@@ -106,7 +106,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
 	request.Meta["foo2"] = "barbaz"
-	actual2 := getRepos(repos, request)
+	actual2 := getRepos(repos, request, 0)
 	if len(actual2) != 1 {
 		t.Error("want 1 repo, got", len(actual2))
 	} else if actual2[0].Key != "1" {
@@ -116,7 +116,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
 	request.Meta["foo2"] = "^baz"
-	actual3 := getRepos(repos, request)
+	actual3 := getRepos(repos, request, 0)
 	if len(actual3) != 1 {
 		t.Error("want 1 repo, got", len(actual3))
 	} else if actual3[0].Key != "2" {
@@ -127,7 +127,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
 	request.Meta["foo1"] = ".*"
-	actual4 := getRepos(repos, request)
+	actual4 := getRepos(repos, request, 0)
 	if len(actual4) != 2 {
 		t.Error("want 2 repos, got", len(actual4))
 	}
@@ -137,7 +137,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
 	request.Meta["foo2"] = "bar"
-	actual5 := getRepos(repos, request)
+	actual5 := getRepos(repos, request, 0)
 	if len(actual5) != 2 {
 		t.Error("want 2 repos, got", len(actual5))
 	}
@@ -146,7 +146,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
 	request.Meta["foo1"] = "!.*"
-	actual6 := getRepos(repos, request)
+	actual6 := getRepos(repos, request, 0)
 	if len(actual6) != 0 {
 		t.Error("want 0 repos, got", len(actual6))
 	}
@@ -154,7 +154,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
 	request.Meta["foo1"] = "!notthere"
-	actual7 := getRepos(repos, request)
+	actual7 := getRepos(repos, request, 0)
 	if len(actual7) != 2 {
 		t.Error("want 2 repos, got", len(actual7))
 	}
@@ -162,7 +162,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo1")
 	delete(request.Meta, "foo2")
 	request.Meta["foo2"] = "!barbaz"
-	actual8 := getRepos(repos, request)
+	actual8 := getRepos(repos, request, 0)
 	if len(actual8) != 1 {
 		t.Error("want 1 repo, got", len(actual8))
 	}
@@ -174,7 +174,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo2")
 	// This should match nothing, since it's really "not anything"
 	request.Meta["foo1"] = "!"
-	actual9 := getRepos(repos, request)
+	actual9 := getRepos(repos, request, 0)
 	if len(actual9) != 0 {
 		t.Error("want 0 repos, got", len(actual9))
 	}
@@ -183,7 +183,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo2")
 	// This should match only the first repo
 	request.Meta["foo1"] = "!bar2"
-	actual10 := getRepos(repos, request)
+	actual10 := getRepos(repos, request, 0)
 	if len(actual10) != 1 {
 		t.Error("want 1 repo, got", len(actual10))
 	} else if actual10[0].Key != "1" {
@@ -194,7 +194,7 @@ func TestGetReposMetaRegexp(t *testing.T) {
 	delete(request.Meta, "foo2")
 	// This should match everything, since it's really "not nothing"
 	request.Meta["foo1"] = "!^$"
-	actual11 := getRepos(repos, request)
+	actual11 := getRepos(repos, request, 0)
 	if len(actual11) != 2 {
 		t.Error("want 2 repos, got", len(actual11))
 	}
@@ -213,7 +213,7 @@ func TestGetReposEmptyOtherKeys(t *testing.T) {
 	delete(request.Meta, "foo2")
 	// Empty match string matches only empty metadata values
 	request.Meta["foo2"] = ""
-	actual0 := getRepos(repos, request)
+	actual0 := getRepos(repos, request, 0)
 	if len(actual0) != 0 {
 		t.Error("want 0 repos, got", len(actual0))
 	}

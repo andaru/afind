@@ -177,7 +177,7 @@ func (r *Repo) UnmarshalJSON(b []byte) (err error) {
 }
 
 // ReposMatchingMeta returns a slice of pointers to repos matching the metadata.
-func ReposMatchingMeta(repos KeyValueStorer, meta Meta, metaRegexp bool) []*Repo {
+func ReposMatchingMeta(repos KeyValueStorer, meta Meta, metaRegexp bool, max int) []*Repo {
 	// Filter all available Repo against request
 	// metadata. Values in the Meta are considered regular
 	// expressions, if request.MetaRegexpMatch is set. If not
@@ -194,7 +194,10 @@ func ReposMatchingMeta(repos KeyValueStorer, meta Meta, metaRegexp bool) []*Repo
 			// Regular expression match
 			result = append(result, r)
 		}
-		return true
+		if max == 0 || len(result) < max {
+			return true
+		}
+		return false
 	})
 	return result
 }
