@@ -158,9 +158,8 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 		select {
 		case <-ctx.Done():
 		default:
-			if len(sr.Matches) > 0 {
-				log.Debug("backend %v (%d matches)",
-					addr, len(sr.Matches))
+			if sr.NumMatches > 0 {
+				log.Debug("backend %v (%d matches)", addr, sr.NumMatches)
 			}
 			results <- sr
 		}
@@ -220,8 +219,13 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	close(reqch)
 
 	// Execute the requests
-	err = par.Requests(reqch).WithConcurrency(s.cfg.MaxSearchC).DoWithContext(ctx)
-	close(ch)
+	go func() {
+		err := par.Requests(reqch).WithConcurrency(s.cfg.MaxSearchC).DoWithContext(ctx)
+		if err != nil {
+			log.Debug("search error %v", err)
+		}
+		close(ch)
+	}()
 
 	// Merge the incoming results until we have enough.
 	for in := range ch {
@@ -229,6 +233,7 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 			resp.Update(in)
 		}
 	}
+
 	resp.Durations.Search = sw.Stop("total")
 	if resp.Error == "" {
 		msg += " ok"
