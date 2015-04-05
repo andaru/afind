@@ -19,8 +19,8 @@ const (
 	defaultTimeoutIndex     = 1800.0
 	defaultTimeoutSearch    = 30.0
 	defaultTimeoutRepoStale = 12 * 3600.0
-	defaultSearchParallel   = 40
-	defaultSearchRepo       = 80
+	defaultSearchParallel   = 100
+	defaultSearchRepo       = 1000
 )
 
 func init() {

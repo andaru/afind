@@ -117,7 +117,6 @@ func localSearch(s *searchServer, req afind.SearchQuery,
 
 	return func(ctx context.Context) error {
 		sr, err := s.searcher.Search(ctx, req)
-		log.Debug("err=%v sr=%v", err, sr)
 		if err != nil {
 			if len(req.RepoKeys) > 0 {
 				sr.Errors[req.RepoKeys[0]] = errs.NewStructError(err)
