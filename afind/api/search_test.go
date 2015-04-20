@@ -485,7 +485,7 @@ func TestRemoteSearch(t *testing.T) {
 	result.Repos = map[string]*afind.Repo{"remote1": repo}
 	ktSearchQueries["remote1_foo"] = result
 
-	query := afind.NewSearchQuery("foo", "", true, []string{"remote1"})
+	query := afind.NewSearchQuery("foo", "", true, []string{})
 	query.Meta.SetHost(t_be_host)
 
 	sr, err := afindd.Search(context.Background(), query)
