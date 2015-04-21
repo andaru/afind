@@ -142,8 +142,6 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 	local := isLocal(s.cfg, req.Meta.Host())
 	resp = afind.NewIndexResult()
 	log.Debug("index [%s] request %#v local=%v", req.Key, req, local)
-	resp = afind.NewIndexResult()
-
 	// A repo cannot be updated or replaced. If a Repo with the same
 	// key already exists on this instance, return it immediately.
 	if r := s.repos.Get(req.Key); r != nil {
@@ -183,16 +181,27 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 		close(reqch)
 		err = par.Requests(reqch).DoWithContext(ctx)
 		close(ch)
-		resp = <-ch
-		if resp.Error != nil {
-			err = resp.Error
-		}
-		// Set the repo if we have one in the response
-		if resp.Repo != nil {
-			_ = s.repos.Set(resp.Repo.Key, resp.Repo)
-		} else {
-			// Delete the temporary indexing repo
-			_ = s.repos.Delete(req.Key)
+		select {
+		case <-ctx.Done():
+			resp.Error = errs.NewStructError(
+				errs.NewTimeoutError("index"))
+		case incoming := <-ch:
+			if incoming == nil {
+				resp.Error = errs.NewStructError(
+					errs.NewRepoUnavailableError())
+				break
+			}
+			if incoming.Error != nil {
+				err = incoming.Error
+			}
+			// Set the repo if we have one in the response
+			if incoming.Repo != nil {
+				_ = s.repos.Set(incoming.Repo.Key, incoming.Repo)
+			} else {
+				// Delete the temporary indexing repo
+				_ = s.repos.Delete(req.Key)
+			}
+			resp = incoming
 		}
 	} else {
 		// neither a local query or a recursive query,
