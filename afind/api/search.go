@@ -202,8 +202,6 @@ func getRequests(
 	// upon completion
 	defer close(chQuery)
 
-	// aggregate all repos per host into a single request
-	// and send them
 	hosts := map[string][]string{}
 	for _, repo := range repos {
 		host := repo.Host()
@@ -214,16 +212,25 @@ func getRequests(
 		hosts[host] = append(hosts[host], repo.Key)
 	}
 
+	// A single request is built for each remote host, containing
+	// all of the repo keys to search. For local requests, the
+	// query for each repo is added as a separate request, to
+	// parallelize local work.
 	for host, keys := range hosts {
 		this := afind.SearchQuery(q)
-		this.RepoKeys = keys
 		this.Meta.SetHost(host)
-		count++
 		if isLocal(s.cfg, host) {
-			log.Debug("new local query keys=%v", this.RepoKeys)
-			chQuery <- localSearch(s, this, chResult)
+			// local requests are not concatenated
+			log.Debug("new local queries for keys=%v", keys)
+			for _, key := range keys {
+				this.RepoKeys = []string{key}
+				count++
+				chQuery <- localSearch(s, this, chResult)
+			}
 		} else {
-			log.Debug("new remote query host=%v keys=%v", host, this.RepoKeys)
+			log.Debug("new remote query host=%v keys=%v", host, keys)
+			this.RepoKeys = keys
+			count++
 			chQuery <- remoteSearch(s, this, chResult)
 		}
 	}

@@ -290,7 +290,6 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 			repo.NumFiles, repo.SizeData, repo.SizeIndex)
 	}
 	log.Info("index [%v] %v [%v]", req.Key, msg, repo.ElapsedIndexing)
-	log.Debug("index result %#v", resp)
 	return
 }
 
