@@ -9,6 +9,7 @@ import (
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/afind"
 	"github.com/andaru/afind/errs"
+	"github.com/andaru/afind/stopwatch"
 	"github.com/julienschmidt/httprouter"
 	"github.com/savaki/par"
 )
@@ -95,7 +96,11 @@ func localIndex(s *indexServer, req afind.IndexQuery,
 	return func(ctx context.Context) error {
 		ir, err := s.indexer.Index(ctx, req)
 		ir.SetError(err)
-		results <- ir
+		select {
+		case <-ctx.Done():
+		default:
+			results <- ir
+		}
 		return nil
 	}
 }
@@ -140,6 +145,8 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 	resp *afind.IndexResult, err error) {
 
 	local := isLocal(s.cfg, req.Meta.Host())
+	sw := stopwatch.New()
+	sw.Start("*")
 	resp = afind.NewIndexResult()
 	log.Debug("index [%s] request %#v local=%v", req.Key, req, local)
 	// A repo cannot be updated or replaced. If a Repo with the same
@@ -212,5 +219,7 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 		err = errs.NewNoRpcClientError()
 		_ = s.repos.Delete(req.Key)
 	}
+
+	log.Debug("index [%s] done (%v)", req.Key, sw.Stop("*"))
 	return
 }
