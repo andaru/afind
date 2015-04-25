@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"os/signal"
 	"time"
@@ -16,13 +15,12 @@ import (
 )
 
 const (
-	periodTcpKeepAlive      = 3 * time.Minute
-	defaultTimeoutIndex     = 1800.0
-	defaultTimeoutSearch    = 30.0
-	defaultTimeoutRepoStale = 12 * 3600.0
-	defaultSearchParallel   = 200
-	defaultSearchRepo       = 0
-	defaultSearchReqBe      = 300
+	defaultTcpKeepAlive   = 3 * time.Minute
+	defaultTimeoutIndex   = 1800.0
+	defaultTimeoutSearch  = 30.0
+	defaultSearchParallel = 200
+	defaultSearchRepo     = 0
+	defaultSearchReqBe    = 300
 )
 
 func init() {
@@ -36,20 +34,20 @@ func init() {
 
 func getConfig() afind.Config {
 	c := afind.Config{
-		IndexRoot:        *flagIndexRoot,
-		IndexInRepo:      *flagIndexInRepo,
-		HttpBind:         *flagHttpBind,
-		HttpsBind:        *flagHttpsBind,
-		RpcBind:          *flagRpcBind,
-		NumShards:        *flagNumShards,
-		RepoMeta:         afind.Meta(flagMeta),
-		DbFile:           *flagDbFile,
-		TimeoutIndex:     time.Duration(*flagTimeoutIndex * float64(time.Second)),
-		TimeoutSearch:    time.Duration(*flagTimeoutSearch * float64(time.Second)),
-		TimeoutRepoStale: time.Duration(*flagTimeoutRepoStale * float64(time.Second)),
-		MaxSearchC:       *flagSearchPar,
-		MaxSearchRepo:    *flagSearchRepo,
-		MaxSearchReqBe:   *flagSearchReqBe,
+		IndexRoot:           *flagIndexRoot,
+		IndexInRepo:         *flagIndexInRepo,
+		HttpBind:            *flagHttpBind,
+		HttpsBind:           *flagHttpsBind,
+		RpcBind:             *flagRpcBind,
+		NumShards:           *flagNumShards,
+		RepoMeta:            afind.Meta(flagMeta),
+		DbFile:              *flagDbFile,
+		TimeoutIndex:        *flagTimeoutIndex,
+		TimeoutSearch:       *flagTimeoutSearch,
+		TimeoutTcpKeepAlive: *flagTimeoutTcpKeepAlive,
+		MaxSearchC:          *flagSearchPar,
+		MaxSearchRepo:       *flagSearchRepo,
+		MaxSearchReqBe:      *flagSearchReqBe,
 	}
 	c.SetVerbose(*flagVerbose)
 	c.Host()
@@ -75,12 +73,12 @@ var (
 		"The Repo persistent storage backing (JSON)")
 	flagVerbose = flag.Bool("v", false,
 		"Log verbosely")
-	flagTimeoutIndex = flag.Float64("timeout_index", defaultTimeoutIndex,
-		"The default indexing timeout, in seconds")
-	flagTimeoutSearch = flag.Float64("timeout_search", defaultTimeoutSearch,
-		"The default search timeout, in seconds")
-	flagTimeoutRepoStale = flag.Float64("timeout_repo_stale", defaultTimeoutRepoStale,
-		"How long to cache remote repo information")
+	flagTimeoutIndex = flag.Duration("timeout_index", defaultTimeoutIndex,
+		"The default indexing timeout, a duration")
+	flagTimeoutSearch = flag.Duration("timeout_search", defaultTimeoutSearch,
+		"The default search timeout, a duration")
+	flagTimeoutTcpKeepAlive = flag.Duration("timeout_tcp_keepalive", defaultTcpKeepAlive,
+		"The default TCP keepalive timeout for server sockets, a duration")
 	flagSearchPar = flag.Int("num_parallel", defaultSearchParallel,
 		"Maximum concurrent searches operating at any one time")
 	flagSearchRepo = flag.Int("num_repo", defaultSearchRepo,
@@ -95,7 +93,11 @@ var (
 )
 
 func setupLogging() {
-	log = utils.LogToFile("afindd", *flagLogPath, *flagVerbose)
+	utils.SetLevel("INFO")
+	if *flagVerbose {
+		utils.SetLevel("DEBUG")
+	}
+	log = utils.LogToFile("afind", *flagLogPath)
 }
 
 func usage() {
@@ -125,13 +127,12 @@ type system struct {
 	quit chan struct{}
 }
 
-func newAfind() system {
-	sys := system{config: getConfig()}
+func newAfind(cfg afind.Config) system {
+	sys := system{config: cfg}
 	if *flagDbFile != "" {
-		log.Debug("writing repos in json to %v", *flagDbFile)
 		sys.repos = afind.NewJsonBackedDb(*flagDbFile)
 	} else {
-		log.Warning("no backing store; repos stored in process memory only")
+		log.Warning("no repo backing store - repos will be lost at process exit")
 		sys.repos = afind.NewDb()
 	}
 	sys.indexer = afind.NewIndexer(&sys.config, sys.repos)
@@ -141,13 +142,11 @@ func newAfind() system {
 
 func main() {
 	flag.Parse()
+	cfg := getConfig()
 	setupLogging()
-
 	log.Info("afindd daemon starting")
-	af := newAfind()
-
-	cfg := &af.config
-	server := api.NewServer(af.repos, af.indexer, af.searcher, cfg)
+	af := newAfind(cfg)
+	server := api.NewServer(af.repos, af.indexer, af.searcher, &cfg)
 
 	// setup quit signal channel (aka handler)
 	quit := make(chan os.Signal, 1)
@@ -155,7 +154,9 @@ func main() {
 
 	if cfg.RpcBind != "" {
 		log.Info("rpc server start [%v]", cfg.RpcBind)
-		if l, err := cfg.ListenerRpc(); err == nil {
+		if l, err := cfg.ListenerTcpWithTimeout(
+			cfg.RpcBind, cfg.GetTimeoutTcpKeepAlive()); err == nil {
+
 			s := api.NewRpcServer(l, server)
 			s.Register()
 
@@ -173,14 +174,21 @@ func main() {
 
 	if cfg.HttpBind != "" {
 		log.Info("http server start [%v]", cfg.HttpBind)
-		s := api.NewWebServer(server)
-		s.Register()
-		go func() {
-			err := s.HttpServer(cfg.HttpBind).ListenAndServe()
-			if err != nil {
-				crit(err)
-			}
-		}()
+		if l, err := cfg.ListenerTcpWithTimeout(
+			cfg.HttpBind, cfg.GetTimeoutTcpKeepAlive()); err == nil {
+
+			s := api.NewWebServer(server)
+			s.Register()
+			go func() {
+				httpd := s.HttpServer(cfg.HttpBind)
+				err := httpd.Serve(l)
+				if err != nil {
+					crit(err)
+				}
+			}()
+		} else {
+			crit(err)
+		}
 	}
 
 	if cfg.HttpsBind != "" {
@@ -201,26 +209,4 @@ func main() {
 	if sig != nil {
 		log.Info("exiting due to %s", sig)
 	}
-}
-
-// A modified TCP listener that sets the TCP keep-alive to eventually
-// timeout abandoned client connections. Modified from the version in
-// golang's standard library (net/http/server.go).
-type tcpKeepAliveListener struct {
-	*net.TCPListener
-	timeout time.Duration
-}
-
-func newTcpKeepAliveListener(l net.Listener, t time.Duration) tcpKeepAliveListener {
-	return tcpKeepAliveListener{l.(*net.TCPListener), t}
-}
-
-func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
-	tc, err := ln.AcceptTCP()
-	if err != nil {
-		return
-	}
-	_ = tc.SetKeepAlive(true)
-	_ = tc.SetKeepAlivePeriod(ln.timeout)
-	return tc, nil
 }

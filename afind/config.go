@@ -28,7 +28,8 @@ type Config struct {
 	TimeoutIndex  time.Duration
 	TimeoutSearch time.Duration
 
-	TimeoutRepoStale time.Duration
+	// TCP keepalive timeout for all server sockets
+	TimeoutTcpKeepAlive time.Duration
 
 	// Metadata to apply to every Repo created by an indexer with
 	// this config. Manipulated by e.g., SetHost()
@@ -43,8 +44,9 @@ type Config struct {
 }
 
 const (
-	defaultTimeoutIndex  = 1800 * time.Second
-	defaultTimeoutSearch = 30 * time.Second
+	defaultTimeoutIndex        = 1800 * time.Second
+	defaultTimeoutSearch       = 30 * time.Second
+	defaultTimeoutTcpKeepAlive = 3 * time.Minute
 )
 
 var (
@@ -80,6 +82,13 @@ func (c *Config) GetTimeoutSearch() time.Duration {
 	return c.TimeoutSearch
 }
 
+func (c *Config) GetTimeoutTcpKeepAlive() time.Duration {
+	if c.TimeoutTcpKeepAlive == 0 {
+		c.TimeoutTcpKeepAlive = defaultTimeoutTcpKeepAlive
+	}
+	return c.TimeoutTcpKeepAlive
+}
+
 func (c *Config) PortRpc() (port string) {
 	port = c.RepoMeta["port.rpc"]
 	if port == "" {
@@ -105,6 +114,16 @@ func (c *Config) ListenerRpc() (l net.Listener, err error) {
 	return net.Listen("tcp", c.RpcBind)
 }
 
+func (c *Config) ListenerTcpWithTimeout(
+	addr string,
+	timeout time.Duration) (l net.Listener, err error) {
+
+	if l, err = net.Listen("tcp", addr); err == nil {
+		return newTcpKeepAliveListener(l, timeout), err
+	}
+	return
+}
+
 // IsHostLocal returns whether the passed in hostname is
 // considered to be local to this machine
 func (c *Config) IsHostLocal(host string) bool {
@@ -118,4 +137,26 @@ func (c *Config) IsHostLocal(host string) bool {
 		return true
 	}
 	return false
+}
+
+// A modified TCP listener that sets the TCP keep-alive to eventually
+// timeout abandoned client connections. Modified from the version in
+// golang's standard library (net/http/server.go).
+type tcpKeepAliveListener struct {
+	*net.TCPListener
+	timeout time.Duration
+}
+
+func newTcpKeepAliveListener(l net.Listener, t time.Duration) tcpKeepAliveListener {
+	return tcpKeepAliveListener{l.(*net.TCPListener), t}
+}
+
+func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
+	tc, err := ln.AcceptTCP()
+	if err != nil {
+		return
+	}
+	_ = tc.SetKeepAlive(true)
+	_ = tc.SetKeepAlivePeriod(ln.timeout)
+	return tc, nil
 }

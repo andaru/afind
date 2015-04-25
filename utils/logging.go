@@ -8,9 +8,15 @@ import (
 
 var (
 	leveled logging.LeveledBackend
+	level   logging.Level
 )
 
-func LogToFile(module, path string, verbose bool) *logging.Logger {
+func init() {
+	// set DEBUG level for testing
+	level = logging.DEBUG
+}
+
+func LogToFile(module, path string) *logging.Logger {
 	var f *os.File
 	var err error
 
@@ -28,18 +34,24 @@ func LogToFile(module, path string, verbose bool) *logging.Logger {
 
 	be := logging.NewLogBackend(f, "", 0)
 	leveled = logging.AddModuleLevel(be)
+	leveled.SetLevel(level, module)
 	logging.SetBackend(leveled)
 	result := logging.MustGetLogger(module)
-	if verbose {
-		leveled.SetLevel(logging.DEBUG, module)
-	} else {
-		leveled.SetLevel(logging.INFO, module)
-	}
 	return result
 }
 
+func SetLevel(newlevel string) {
+	l, err := logging.LogLevel(newlevel)
+	if err == nil {
+		level = l
+	} else {
+		level = logging.INFO
+	}
+}
+
 func Logger(module string) *logging.Logger {
-	return logging.MustGetLogger(module)
+	lgr := logging.MustGetLogger(module)
+	return lgr
 }
 
 func init() {

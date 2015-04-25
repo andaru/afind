@@ -2,6 +2,7 @@ package afind
 
 import (
 	"testing"
+	"time"
 
 	"github.com/andaru/afind/utils"
 )
@@ -36,7 +37,17 @@ func TestConfig(t *testing.T) {
 	c.RepoMeta["host"] = "newhost"
 	eq(t, "newhost", c.Host())
 	neq(t, nil, c.GetTimeoutIndex())
+	expTimeoutIndex := 1 * time.Millisecond
+	c.TimeoutIndex = expTimeoutIndex
+	eq(t, expTimeoutIndex, c.GetTimeoutIndex())
 	neq(t, nil, c.GetTimeoutSearch())
+	expTimeoutSearch := 1 * time.Millisecond
+	c.TimeoutSearch = expTimeoutSearch
+	eq(t, expTimeoutSearch, c.GetTimeoutSearch())
+	neq(t, nil, c.GetTimeoutTcpKeepAlive())
+	expTcpKeepAlive := 10 * time.Minute
+	c.TimeoutTcpKeepAlive = expTcpKeepAlive
+	eq(t, expTcpKeepAlive, c.GetTimeoutTcpKeepAlive())
 	eq(t, false, c.Verbose())
 	c.SetVerbose(true)
 	eq(t, true, c.Verbose())

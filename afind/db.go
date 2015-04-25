@@ -162,7 +162,7 @@ func newJsonBackedDb(filename string) *db {
 		log.Info("Loaded database (%d repos; %s data/%s index)",
 			len(newDb.R), sizeData, sizeIndex)
 	} else {
-		log.Warning("Starting with fresh backing store: %v", err)
+		log.Warning("Creating new JSON backing store: %s", filename)
 	}
 	return newDb
 }

@@ -110,7 +110,7 @@ func getRequests(
 	// parallelize local work.
 	for host, keys := range hosts {
 		if maxBe > 0 && countBe >= maxBe {
-			log.Debug("reached backend request limit (%d)", maxBe)
+			log.Warning("search [%v] max backend requests (%d)", q, maxBe)
 			break
 		}
 
@@ -133,7 +133,7 @@ func getRequests(
 		}
 	}
 	elapsed := sw.Stop("*")
-	log.Debug("getRequests count=%v elapsed=%v", count, elapsed)
+	log.Debug("getRequests count=%d (%d be) elapsed=%v", count, countBe, elapsed)
 	return
 }
 
@@ -274,7 +274,7 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	sw.Start("get_requests")
 	numreq, reqch, ch := getRequests(s, req)
 	resp.Durations.GetRepos = sw.Stop("get_requests")
-	log.Debug("_getRequests numRequests=%d elapsed=%v",
+	log.Debug("getRequests numRequests=%d elapsed=%v",
 		numreq, resp.Durations.GetRepos)
 
 	// Get a request context
