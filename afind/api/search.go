@@ -82,6 +82,7 @@ func getRequests(
 	maxBe := s.cfg.MaxSearchReqBe
 	repos := getRepos(s.repos, q, s.cfg.MaxSearchRepo)
 	numrepos := len(repos)
+	countBe := 0
 
 	chQuery = make(chan par.RequestFunc, numrepos+1)
 	chResult = make(chan *afind.SearchResult, numrepos+1)
@@ -108,7 +109,7 @@ func getRequests(
 	// query for each repo is added as a separate request, to
 	// parallelize local work.
 	for host, keys := range hosts {
-		if maxBe > 0 && count >= maxBe {
+		if maxBe > 0 && countBe >= maxBe {
 			log.Debug("reached backend request limit (%d)", maxBe)
 			break
 		}
@@ -127,6 +128,7 @@ func getRequests(
 			log.Debug("new remote query host=%v keys=%v", host, keys)
 			this.RepoKeys = keys
 			count++
+			countBe++
 			chQuery <- remoteSearch(s, this, chResult)
 		}
 	}
