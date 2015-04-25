@@ -27,6 +27,21 @@ func (s *SearcherClient) Close() {
 	_ = s.client.Close()
 }
 
+func (s *SearcherClient) Search(
+	ctx context.Context,
+	query afind.SearchQuery) (sr *afind.SearchResult, err error) {
+
+	sr = afind.NewSearchResult()
+	searchCall := s.client.Go(s.endpoint+".Search", query, sr, nil)
+	select {
+	case <-ctx.Done():
+		err = errs.NewTimeoutError("search")
+	case reply := <-searchCall.Done:
+		err = reply.Error
+	}
+	return
+}
+
 // returns a slice of Repo relevant to this search query
 func getRepos(
 	rstore afind.KeyValueStorer,
@@ -40,7 +55,10 @@ func getRepos(
 			if max > 0 && len(repos) > max {
 				break
 			}
-			repos = append(repos, value.(*afind.Repo))
+			repo := value.(*afind.Repo)
+			if repo.State == afind.OK {
+				repos = append(repos, repo)
+			}
 		}
 	}
 	if len(request.RepoKeys) > 0 {
@@ -51,18 +69,69 @@ func getRepos(
 	return afind.ReposMatchingMeta(rstore, request.Meta, request.MetaRegexpMatch, max)
 }
 
-func (s *SearcherClient) Search(
-	ctx context.Context,
-	query afind.SearchQuery) (sr *afind.SearchResult, err error) {
+func getRequests(
+	s *searchServer,
+	q afind.SearchQuery) (
+	count int,
+	chQuery chan par.RequestFunc,
+	chResult chan *afind.SearchResult) {
 
-	sr = afind.NewSearchResult()
-	searchCall := s.client.Go(s.endpoint+".Search", query, sr, nil)
-	select {
-	case <-ctx.Done():
-		err = errs.NewTimeoutError("search")
-	case reply := <-searchCall.Done:
-		err = reply.Error
+	sw := stopwatch.New()
+	sw.Start("*")
+
+	maxBe := s.cfg.MaxSearchReqBe
+	repos := getRepos(s.repos, q, s.cfg.MaxSearchRepo)
+	numrepos := len(repos)
+
+	chQuery = make(chan par.RequestFunc, numrepos+1)
+	chResult = make(chan *afind.SearchResult, numrepos+1)
+	// whatever the case, we always close the request channel
+	// upon completion, or we will deadlock
+	defer close(chQuery)
+
+	if numrepos < 1 {
+		return
 	}
+
+	hosts := map[string][]string{}
+	for _, repo := range repos {
+		host := repo.Host()
+		_, ok := hosts[host]
+		if !ok {
+			hosts[host] = []string{}
+		}
+		hosts[host] = append(hosts[host], repo.Key)
+	}
+
+	// A single request is built for each remote host, containing
+	// all of the repo keys to search. For local requests, the
+	// query for each repo is added as a separate request, to
+	// parallelize local work.
+	for host, keys := range hosts {
+		if maxBe > 0 && count >= maxBe {
+			log.Debug("reached backend request limit (%d)", maxBe)
+			break
+		}
+
+		this := afind.SearchQuery(q)
+		this.Meta.SetHost(host)
+		if isLocal(s.cfg, host) {
+			// local requests are not concatenated
+			log.Debug("new local queries for keys=%v", keys)
+			for _, key := range keys {
+				this.RepoKeys = []string{key}
+				count++
+				chQuery <- localSearch(s, this, chResult)
+			}
+		} else {
+			log.Debug("new remote query host=%v keys=%v", host, keys)
+			this.RepoKeys = keys
+			count++
+			chQuery <- remoteSearch(s, this, chResult)
+		}
+	}
+	elapsed := sw.Stop("*")
+	log.Debug("getRequests count=%v elapsed=%v", count, elapsed)
 	return
 }
 
@@ -187,59 +256,6 @@ func logmsgSearch(req afind.SearchQuery) string {
 	return msg
 }
 
-func getRequests(
-	s *searchServer,
-	q afind.SearchQuery,
-	repos []*afind.Repo,
-	chQuery chan par.RequestFunc,
-	chResult chan *afind.SearchResult) int {
-
-	sw := stopwatch.New()
-	sw.Start("*")
-	count := 0
-
-	// whatever the case, we always close the request channel
-	// upon completion
-	defer close(chQuery)
-
-	hosts := map[string][]string{}
-	for _, repo := range repos {
-		host := repo.Host()
-		_, ok := hosts[host]
-		if !ok {
-			hosts[host] = []string{}
-		}
-		hosts[host] = append(hosts[host], repo.Key)
-	}
-
-	// A single request is built for each remote host, containing
-	// all of the repo keys to search. For local requests, the
-	// query for each repo is added as a separate request, to
-	// parallelize local work.
-	for host, keys := range hosts {
-		this := afind.SearchQuery(q)
-		this.Meta.SetHost(host)
-		if isLocal(s.cfg, host) {
-			// local requests are not concatenated
-			log.Debug("new local queries for keys=%v", keys)
-			for _, key := range keys {
-				this.RepoKeys = []string{key}
-				count++
-				chQuery <- localSearch(s, this, chResult)
-			}
-		} else {
-			log.Debug("new remote query host=%v keys=%v", host, keys)
-			this.RepoKeys = keys
-			count++
-			chQuery <- remoteSearch(s, this, chResult)
-		}
-	}
-	elapsed := sw.Stop("*")
-	log.Debug("_getRequests elapsed=%v", elapsed)
-	log.Debug("_getRequests count=%v", count)
-	return count
-}
-
 func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	resp *afind.SearchResult, err error) {
 
@@ -253,15 +269,11 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 
 	// Determine which repos to search, flatten requests per host,
 	// then execute the searches concurrently.
-	sw.Start("get_repos")
-	keys := getRepos(s.repos, req, s.cfg.MaxSearchRepo)
-	resp.Durations.GetRepos = sw.Stop("get_repos")
-	ch := make(chan *afind.SearchResult, len(keys))
-	reqch := make(chan par.RequestFunc, s.cfg.MaxSearchC+1)
-	sw.Start("_getRequests")
-	numreq := getRequests(s, req, keys, reqch, ch)
+	sw.Start("get_requests")
+	numreq, reqch, ch := getRequests(s, req)
+	resp.Durations.GetRepos = sw.Stop("get_requests")
 	log.Debug("_getRequests numRequests=%d elapsed=%v",
-		numreq, sw.Stop("_getRequests"))
+		numreq, resp.Durations.GetRepos)
 
 	// Get a request context
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

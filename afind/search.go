@@ -53,6 +53,14 @@ type SearchQuery struct {
 	Meta Meta `json:"meta"`
 	// If true, use regular expressions to match Meta
 	MetaRegexpMatch bool `json:"meta_use_regexp,omitempty"`
+	// Metadata based replica detection. Repo are considered
+	// replica if their values of this Meta key equal. Meta
+	// without this key are never considered replicas.
+	MetaReplicaKey string
+	// The maximum number of replicas to query when a
+	// MetaReplicaKey is provided. If 0, all available replicas
+	// are queried.
+	MetaReplicaMax int
 
 	// Search context (number of lines ahead, behind or both)
 	Context SearchContext `json:"context"`

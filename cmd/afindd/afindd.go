@@ -19,8 +19,9 @@ const (
 	defaultTimeoutIndex     = 1800.0
 	defaultTimeoutSearch    = 30.0
 	defaultTimeoutRepoStale = 12 * 3600.0
-	defaultSearchParallel   = 100
-	defaultSearchRepo       = 1000
+	defaultSearchParallel   = 200
+	defaultSearchRepo       = 0
+	defaultSearchReqBe      = 300
 )
 
 func init() {
@@ -47,6 +48,7 @@ func getConfig() afind.Config {
 		TimeoutRepoStale: time.Duration(*flagTimeoutRepoStale * float64(time.Second)),
 		MaxSearchC:       *flagSearchPar,
 		MaxSearchRepo:    *flagSearchRepo,
+		MaxSearchReqBe:   *flagSearchReqBe,
 	}
 	c.SetVerbose(*flagVerbose)
 	c.Host()
@@ -81,6 +83,8 @@ var (
 		"Maximum concurrent searches operating at any one time")
 	flagSearchRepo = flag.Int("num_repo", defaultSearchRepo,
 		"Maximum number of repo to consult per query")
+	flagSearchReqBe = flag.Int("num_remote_reqest", defaultSearchReqBe,
+		"Maximum number of backend requests per query")
 	flagMeta = make(flags.SSMap)
 
 	log = utils.LoggerForModuleVerbose("afindd")

@@ -187,6 +187,10 @@ func ReposMatchingMeta(repos KeyValueStorer, meta Meta, metaRegexp bool, max int
 	result := []*Repo{}
 	repos.ForEach(func(key string, value interface{}) bool {
 		r := value.(*Repo)
+		// Skip unavailable repos
+		if r.State != OK {
+			return true
+		}
 		if !metaRegexp && r.Meta.Matches(meta) {
 			// Exact string match
 			result = append(result, r)

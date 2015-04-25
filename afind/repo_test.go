@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+func newRepo(key string) *Repo {
+	r := NewRepo()
+	r.Key = key
+	r.State = OK
+	return r
+}
+
 func TestMeta(t *testing.T) {
 	m1 := Meta{"foo": "bar"}
 	m2 := Meta{}
@@ -128,12 +135,10 @@ func TestRepoJson(t *testing.T) {
 func TestReposMatchingMeta(t *testing.T) {
 	db := newDb()
 
-	repo1 := NewRepo()
-	repo1.Key = "repo1"
+	repo1 := newRepo("repo1")
 	repo1.SetHost("host123")
 
-	repo2 := NewRepo()
-	repo2.Key = "repo2"
+	repo2 := newRepo("repo2")
 	repo2.SetHost("host12")
 
 	db.Set("repo1", repo1)

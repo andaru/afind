@@ -12,14 +12,19 @@ import (
 	"github.com/andaru/afind/afind"
 )
 
+func newRepo(key string) *afind.Repo {
+	r := afind.NewRepo()
+	r.Key = key
+	r.State = afind.OK
+	return r
+}
+
 func setRepos(repos afind.KeyValueStorer) {
-	repo1 := afind.NewRepo()
-	repo1.Key = "1"
+	repo1 := newRepo("1")
 	repo1.Meta["foo1"] = "bar"
 	repo1.Meta["foo2"] = "barbazfoo"
 
-	repo2 := afind.NewRepo()
-	repo2.Key = "2"
+	repo2 := newRepo("2")
 	repo2.Meta["foo1"] = "bar2"
 	repo2.Meta["foo2"] = "bazbar"
 
@@ -385,8 +390,7 @@ func TestSearchSingleRepo(t *testing.T) {
 	sys := newRpcServer(t, getTestConfig())
 	defer sys.rpcServer.CloseNoErr()
 
-	repo := afind.NewRepo()
-	repo.Key = "repo1"
+	repo := newRepo("repo1")
 	repo.Root = "/"
 	repo.NumShards = 1
 	testAddRepos(sys, map[string]*afind.Repo{"repo1": repo})
@@ -460,8 +464,7 @@ func TestRemoteSearch(t *testing.T) {
 	defer fe.rpcServer.CloseNoErr()
 
 	// Add the remote repo, which lives on the backend host
-	repo := afind.NewRepo()
-	repo.Key = "remote1"
+	repo := newRepo("remote1")
 	repo.Root = "/"
 	repo.NumShards = 1
 	repo.Meta.SetHost(t_be_host)
