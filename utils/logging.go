@@ -7,17 +7,39 @@ import (
 )
 
 var (
-	loglevbe logging.LeveledBackend
+	leveled logging.LeveledBackend
 )
 
-func LoggerForModuleVerbose(module string) *logging.Logger {
-	return LoggerForModule(module, logging.DEBUG)
+func LogToFile(module, path string, verbose bool) *logging.Logger {
+	var f *os.File
+	var err error
+
+	if path == "-" {
+		f = os.Stdout
+	} else {
+		if path == "" {
+			path = os.DevNull
+		}
+		f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			panic("cannot write log file: " + err.Error())
+		}
+	}
+
+	be := logging.NewLogBackend(f, "", 0)
+	leveled = logging.AddModuleLevel(be)
+	logging.SetBackend(leveled)
+	result := logging.MustGetLogger(module)
+	if verbose {
+		leveled.SetLevel(logging.DEBUG, module)
+	} else {
+		leveled.SetLevel(logging.INFO, module)
+	}
+	return result
 }
 
-func LoggerForModule(module string, level logging.Level) *logging.Logger {
-	logr := logging.MustGetLogger(module)
-	loglevbe.SetLevel(level, module)
-	return logr
+func Logger(module string) *logging.Logger {
+	return logging.MustGetLogger(module)
 }
 
 func init() {
@@ -25,10 +47,8 @@ func init() {
 }
 
 func setupLogging() {
-	loglevbe = logging.AddModuleLevel(logging.NewLogBackend(os.Stderr, "", 0))
 	format := logging.MustStringFormatter(
-		"%{color:bold}%{level:.1s}%{time:0102 15:04:05.999999} " +
-			"%{pid} %{shortfunc} %{shortfile}]%{color:reset} %{message}")
+		"%{level:.1s}%{time:0102 15:04:05.999999} " +
+			"%{pid} %{shortfunc} %{shortfile}] %{message}")
 	logging.SetFormatter(format)
-	logging.SetBackend(loglevbe)
 }

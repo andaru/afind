@@ -5,5 +5,5 @@ import (
 )
 
 var (
-	log = utils.LoggerForModuleVerbose("api")
+	log = utils.Logger("api")
 )

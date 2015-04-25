@@ -12,6 +12,7 @@ import (
 	"github.com/andaru/afind/afind/api"
 	"github.com/andaru/afind/flags"
 	"github.com/andaru/afind/utils"
+	"github.com/op/go-logging"
 )
 
 const (
@@ -72,7 +73,8 @@ var (
 		"Number of file shards created per Repo indexing request")
 	flagDbFile = flag.String("dbfile", "",
 		"The Repo persistent storage backing (JSON)")
-	flagVerbose      = flag.Bool("v", false, "Log verbosely")
+	flagVerbose = flag.Bool("v", false,
+		"Log verbosely")
 	flagTimeoutIndex = flag.Float64("timeout_index", defaultTimeoutIndex,
 		"The default indexing timeout, in seconds")
 	flagTimeoutSearch = flag.Float64("timeout_search", defaultTimeoutSearch,
@@ -83,12 +85,18 @@ var (
 		"Maximum concurrent searches operating at any one time")
 	flagSearchRepo = flag.Int("num_repo", defaultSearchRepo,
 		"Maximum number of repo to consult per query")
-	flagSearchReqBe = flag.Int("num_remote_reqest", defaultSearchReqBe,
+	flagSearchReqBe = flag.Int("num_request_be", defaultSearchReqBe,
 		"Maximum number of backend requests per query")
+	flagLogPath = flag.String("log", os.DevNull,
+		"Log to this path (use - for stdout)")
 	flagMeta = make(flags.SSMap)
 
-	log = utils.LoggerForModuleVerbose("afindd")
+	log *logging.Logger
 )
+
+func setupLogging() {
+	log = utils.LogToFile("afindd", *flagLogPath, *flagVerbose)
+}
 
 func usage() {
 	fmt.Fprintln(os.Stderr,
@@ -97,7 +105,8 @@ func usage() {
 Usage:
   afindd [options]
 
-afindd does not fork, and writes logs to stderr.
+afindd does not fork and does not, by default write logs. Use the
+-log and -v flags to control logging destination and verbosity.
 
 Options:`)
 	flag.PrintDefaults()
@@ -122,7 +131,7 @@ func newAfind() system {
 		log.Debug("writing repos in json to %v", *flagDbFile)
 		sys.repos = afind.NewJsonBackedDb(*flagDbFile)
 	} else {
-		log.Debug("no backing store; repos stored in process memory only")
+		log.Warning("no backing store; repos stored in process memory only")
 		sys.repos = afind.NewDb()
 	}
 	sys.indexer = afind.NewIndexer(&sys.config, sys.repos)
@@ -131,8 +140,10 @@ func newAfind() system {
 }
 
 func main() {
-	log.Info("afindd daemon starting")
 	flag.Parse()
+	setupLogging()
+
+	log.Info("afindd daemon starting")
 	af := newAfind()
 
 	cfg := &af.config
