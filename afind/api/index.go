@@ -172,7 +172,18 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 
 	// setup a request context
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+	defer func() {
+		cancel()
+		// if the final repo hasn't been set, delete the temporary
+		if iv := s.repos.Get(req.Key); iv != nil {
+			r := iv.(*afind.Repo)
+			if r == nil || r.State != afind.INDEXING {
+				return
+			}
+			log.Debug("index [%v] clearing failed indexing repo", req.Key)
+			_ = s.repos.Delete(req.Key)
+		}
+	}()
 
 	if local || req.Recurse {
 		// we have a local or a remote indexing request to make.
