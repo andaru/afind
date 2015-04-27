@@ -362,8 +362,11 @@ func indexShard(
 				numFiles++
 			}
 		}
-		out <- numFiles
+		select {
+		case <-ctx.Done():
+		default:
+			out <- numFiles
+		}
 		return nil
 	}
-
 }
