@@ -228,6 +228,7 @@ type testSystem struct {
 	repos     afind.KeyValueStorer
 	indexer   testIndexer
 	searcher  testSearcher
+	finder    testFinder
 	config    afind.Config
 	server    *baseServer
 	rpcServer *RpcServer
@@ -290,11 +291,29 @@ func (i testSearcher) Search(
 	return
 }
 
+type testFinder struct {
+	called map[string]int
+	lock   *sync.Mutex
+}
+
+func newTestFinder() testFinder {
+	return testFinder{map[string]int{}, &sync.Mutex{}}
+}
+
+func (i testFinder) Find(
+	ctx context.Context,
+	q afind.FindQuery) (fr *afind.FindResult, err error) {
+	fr = afind.NewFindResult()
+	fr.Matches["foo.txt"] = map[string]int{"key1": 1, "key17": 1}
+	return
+}
+
 func newTestAfind(c afind.Config) (sys testSystem) {
 	sys = testSystem{
 		repos:    afind.NewDb(),
 		indexer:  newTestIndexer(),
 		searcher: newTestSearcher(),
+		finder:   newTestFinder(),
 		config:   c,
 	}
 	return
@@ -302,7 +321,7 @@ func newTestAfind(c afind.Config) (sys testSystem) {
 
 func newRpcServer(t *testing.T, c afind.Config) testSystem {
 	sys := newTestAfind(c)
-	server := NewServer(sys.repos, sys.indexer, sys.searcher, &c)
+	server := NewServer(sys.repos, sys.indexer, sys.searcher, sys.finder, &c)
 	sys.server = server
 	rpcListener, err := sys.config.ListenerRpc()
 	if err != nil {

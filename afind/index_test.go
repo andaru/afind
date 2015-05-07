@@ -93,7 +93,6 @@ func TestNormalize(t *testing.T) {
 	} else if err != nil && !strings.Contains(err.Error(), "Dirs must not be absolute paths") {
 		t.Errorf("want a ValueError about an Dirs being absolute, got %v", err)
 	}
-
 }
 
 func TestIndexerBasic(t *testing.T) {

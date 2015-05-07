@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"code.google.com/p/go.net/context"
 	"github.com/andaru/afind/afind"
@@ -17,6 +18,7 @@ import (
 	"github.com/andaru/afind/errs"
 	"github.com/andaru/afind/flags"
 	"github.com/andaru/afind/utils"
+	"github.com/op/go-logging"
 )
 
 // This is the afind command-line client
@@ -54,8 +56,13 @@ var (
 	flagSetRepos   = flag.NewFlagSet("repos", flag.ExitOnError)
 	flagRepoDelete = flagSetRepos.Bool("D", false,
 		"Delete a single repo if selected")
-	flagTimeoutSearch = flag.Float64("timeout", 30.0,
+	flagTimeoutSearch = flag.Duration("timeout", 30*time.Second,
 		"Set the search timeout in seconds")
+
+	flagLogPath = flag.String("log", os.DevNull,
+		"Log to this path (use - for stdout)")
+
+	log *logging.Logger
 )
 
 func usage() {
@@ -203,12 +210,10 @@ func search(c *ctx, query string) error {
 		Meta:       afind.Meta(flagMeta),
 		MaxMatches: *flagMaxMatches,
 		Recurse:    true,
-		// Timeout:    time.Duration(*flagTimeoutSearch) * time.Second,
+		Timeout:    *flagTimeoutSearch,
 	}
 	request.Context = getSearchContext()
 	sr, err := c.searcher.Search(context.Background(), request)
-	fmt.Printf("sr is: %#v\n", sr)
-	fmt.Printf("err is: %#v\n", err)
 	// now print the matches
 	printMatches(sr)
 	// print per repo errors, if any were found
@@ -237,13 +242,14 @@ func index(c *ctx, key, root string, dirsOrFiles []string) error {
 	// appropriately to the request
 	for _, path := range dirsOrFiles {
 		fullpath := filepath.Join(root, path)
-		if fi, err := os.Lstat(fullpath); err != nil {
+		if fi, err := os.Lstat(fullpath); err == nil {
 			if fi.IsDir() {
 				request.Dirs = append(request.Dirs, path)
 			} else {
 				request.Files = append(request.Files, path)
 			}
 		}
+		log.Debug("index request %#v", request)
 	}
 
 	ir, err := c.indexer.Index(context.Background(), request)
@@ -337,6 +343,7 @@ func doAfind() error {
 		key := args[0]
 		root := args[1]
 		dirsOrFiles := args[2:]
+		fmt.Printf("%v %v %v\n", key, root, dirsOrFiles)
 		if err = setupContext(context); err == nil {
 			return index(context, key, root, dirsOrFiles)
 		}
@@ -418,6 +425,14 @@ func printErrors(sr *afind.SearchResult) {
 	}
 }
 
+func setupLogging() {
+	utils.SetLevel("INFO")
+	if *flagVerbose {
+		utils.SetLevel("DEBUG")
+	}
+	log = utils.LogToFile("afind", *flagLogPath)
+}
+
 func printRepos(sr *afind.SearchResult) {
 	fmt.Println("Repos in result:")
 	for _, repo := range sr.Repos {
@@ -427,6 +442,7 @@ func printRepos(sr *afind.SearchResult) {
 
 func main() {
 	flag.Parse()
+	setupLogging()
 
 	if len(flag.Args()) < 1 {
 		flag.Usage()

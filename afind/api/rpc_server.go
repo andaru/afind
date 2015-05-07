@@ -11,6 +11,7 @@ const (
 	EPIndexer  = "Indexer"
 	EPSearcher = "Searcher"
 	EPRepos    = "Repos"
+	EPFinder   = "Finder"
 )
 
 type RpcServer struct {
@@ -40,6 +41,7 @@ func (s *RpcServer) Register() {
 	_ = s.server.RegisterName(EPRepos, &reposServer{s.repos})
 	_ = s.server.RegisterName(EPIndexer, &indexServer{&s.config, s.repos, s.indexer})
 	_ = s.server.RegisterName(EPSearcher, &searchServer{&s.config, s.repos, s.searcher})
+	_ = s.server.RegisterName(EPFinder, &findServer{&s.config, s.repos, s.finder})
 }
 
 func (s *RpcServer) Serve() error {

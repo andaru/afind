@@ -63,8 +63,8 @@ const (
 	maxShards = 32
 )
 
-// Sets the error string on the IndexResult if the error passed is not
-// nil, else is a no-op.
+// SetError updates the error string on the IndexResult if the error
+// passed is not nil, else is a no-op.
 func (ir *IndexResult) SetError(err error) {
 	if e, ok := err.(*errs.StructError); ok {
 		ir.Error = e
@@ -73,9 +73,9 @@ func (ir *IndexResult) SetError(err error) {
 	}
 }
 
-// Creates a new, keyed but otherwise empty IndexQuery.
-// There must be at least one entry in Dirs or Files when the
-// query is sent.
+// NewIndexQuery creates a new, keyed but otherwise empty IndexQuery.
+// There must be at least one entry in Dirs or Files when the query is
+// sent.
 func NewIndexQuery(key string) IndexQuery {
 	return IndexQuery{
 		Key:   key,
@@ -102,7 +102,7 @@ func (r *IndexQuery) Normalize() error {
 	// any duplicate paths to avoid duplicate indexing of files.
 	seen := map[string]struct{}{}
 	for _, dir := range r.Dirs {
-		if path.IsAbs(dir) {
+		if dir != "/" && path.IsAbs(dir) {
 			return errs.NewValueError(
 				"dirs", "Dirs must not be absolute paths")
 		}
@@ -208,11 +208,11 @@ func shardName(key string, n int) string {
 func (i indexer) Index(ctx context.Context, req IndexQuery) (
 	resp *IndexResult, err error) {
 
-	log.Info("index [%v]", req.Key)
+	log.Info("index [%v] root [%v] len_dirs=%v len_files=%v",
+		req.Key, req.Root, len(req.Dirs), len(req.Files))
 	start := time.Now()
 	// Setup the response
 	resp = NewIndexResult()
-
 	if err = req.Normalize(); err != nil {
 		log.Info("index [%v] error: %v", req.Key, err)
 		resp.Error = errs.NewStructError(err)
@@ -230,12 +230,12 @@ func (i indexer) Index(ctx context.Context, req IndexQuery) (
 
 	for n := range i.shards {
 		name := path.Join(i.root, shardName(req.Key, n))
-		if ixw, err := getIndexWriter(ctx, name); err != nil {
+		ixw, err := getIndexWriter(ctx, name)
+		if err != nil {
 			resp.Error = errs.NewStructError(err)
 			return resp, nil
-		} else {
-			i.shards[n] = ixw
 		}
+		i.shards[n] = ixw
 	}
 
 	fs := getFileSystem(ctx, i.root)
@@ -305,7 +305,7 @@ func trimLeadingSlash(name string) string {
 func (i *indexer) scanner(fs walkablefs.WalkableFileSystem, query *IndexQuery) ([]string, error) {
 	var err error
 
-	names := make([]string, 0)
+	var names []string
 
 	// First, add any specific files in the request
 	for _, name := range query.Files {
@@ -351,7 +351,7 @@ func indexShard(
 		for name := range in {
 			select {
 			case <-ctx.Done():
-				break
+				return nil
 			default:
 			}
 

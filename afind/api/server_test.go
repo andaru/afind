@@ -80,8 +80,10 @@ func TestNewServer(t *testing.T) {
 	c := newConfig()
 	indexer := afind.NewIndexer(&c, db)
 	searcher := afind.NewSearcher(&c, db)
-	server := NewServer(db, indexer, searcher, &c)
+	finder := afind.NewFinder(&c, db)
+	server := NewServer(db, indexer, searcher, finder, &c)
 	neq(t, nil, server)
 	eq(t, indexer, server.indexer)
 	eq(t, searcher, server.searcher)
+	eq(t, finder, server.finder)
 }

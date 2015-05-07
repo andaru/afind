@@ -22,11 +22,12 @@ type Config struct {
 	MaxSearchRepo  int    // Maximum number of Repo to consider per search
 	MaxSearchReqBe int    // Maximum number of backend requests per query
 
-	// Default index and search timeouts, in seconds
+	// Default index, search and find timeouts, in seconds
 	// If not provided, the defaults below will be used, see
 	// defaultTimeout* constants.
 	TimeoutIndex  time.Duration
 	TimeoutSearch time.Duration
+	TimeoutFind   time.Duration
 
 	// TCP keepalive timeout for all server sockets
 	TimeoutTcpKeepAlive time.Duration
@@ -46,6 +47,7 @@ type Config struct {
 const (
 	defaultTimeoutIndex        = 1800 * time.Second
 	defaultTimeoutSearch       = 30 * time.Second
+	defaultTimeoutFind         = 500 * time.Millisecond
 	defaultTimeoutTcpKeepAlive = 3 * time.Minute
 )
 
@@ -80,6 +82,13 @@ func (c *Config) GetTimeoutSearch() time.Duration {
 		c.TimeoutSearch = defaultTimeoutSearch
 	}
 	return c.TimeoutSearch
+}
+
+func (c *Config) GetTimeoutFind() time.Duration {
+	if c.TimeoutFind == 0 {
+		c.TimeoutFind = defaultTimeoutFind
+	}
+	return c.TimeoutFind
 }
 
 func (c *Config) GetTimeoutTcpKeepAlive() time.Duration {

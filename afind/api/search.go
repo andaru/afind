@@ -213,6 +213,8 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 
 	addr := getAddress(req.Meta, s.cfg.PortRpc())
 	return func(ctx context.Context) error {
+		sw := stopwatch.New()
+		sw.Start("*")
 		sr := afind.NewSearchResult()
 		cl, err := NewRpcClient(addr)
 		if err == nil {
@@ -232,7 +234,8 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 		case <-ctx.Done():
 		default:
 			if sr.NumMatches > 0 {
-				log.Debug("backend %v (%d matches)", addr, sr.NumMatches)
+				log.Debug("search backend %v (%d matches) (%v)",
+					addr, sr.NumMatches, sw.Stop("*"))
 			}
 			results <- sr
 		}
@@ -248,7 +251,7 @@ func timeoutSearch(req afind.SearchQuery, cfg *afind.Config) time.Duration {
 }
 
 func logmsgSearch(req afind.SearchQuery) string {
-	msg := "[" + req.Re + "]"
+	msg := "search [" + req.Re + "]"
 	if req.IgnoreCase {
 		msg += " ignore-case"
 	}
@@ -264,7 +267,7 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	sw := stopwatch.New()
 	sw.Start("total")
 	msg := logmsgSearch(req)
-	log.Info("search %s", msg)
+	log.Info("%s", msg)
 
 	resp = afind.NewSearchResult()
 	resp.MaxMatches = req.MaxMatches
@@ -293,7 +296,8 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	for in := range ch {
 		resp.Update(in)
 		if resp.EnoughResults() {
-			log.Debug("search finished early (%d matches)", resp.NumMatches)
+			log.Debug("%s finished early (%d matches)",
+				msg, resp.NumMatches)
 			cancel()
 		}
 	}
@@ -304,7 +308,7 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	} else {
 		msg += " error"
 	}
-	log.Info("search %s (%v)", msg, resp.Durations.Search)
+	log.Info("%s (%d matches) (%v)", msg, resp.NumMatches, resp.Durations.Search)
 	return
 }
 

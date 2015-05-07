@@ -16,8 +16,9 @@ import (
 
 const (
 	defaultTcpKeepAlive   = 3 * time.Minute
-	defaultTimeoutIndex   = 1800.0
-	defaultTimeoutSearch  = 30.0
+	defaultTimeoutIndex   = 30 * time.Minute
+	defaultTimeoutSearch  = 30 * time.Second
+	defaultTimeoutFind    = 5000 * time.Millisecond
 	defaultSearchParallel = 200
 	defaultSearchRepo     = 0
 	defaultSearchReqBe    = 300
@@ -45,6 +46,7 @@ func getConfig() afind.Config {
 		TimeoutIndex:        *flagTimeoutIndex,
 		TimeoutSearch:       *flagTimeoutSearch,
 		TimeoutTcpKeepAlive: *flagTimeoutTcpKeepAlive,
+		TimeoutFind:         *flagTimeoutFind,
 		MaxSearchC:          *flagSearchPar,
 		MaxSearchRepo:       *flagSearchRepo,
 		MaxSearchReqBe:      *flagSearchReqBe,
@@ -77,6 +79,8 @@ var (
 		"The default indexing timeout, a duration")
 	flagTimeoutSearch = flag.Duration("timeout_search", defaultTimeoutSearch,
 		"The default search timeout, a duration")
+	flagTimeoutFind = flag.Duration("timeout_find", defaultTimeoutFind,
+		"The default find timeout, a duration")
 	flagTimeoutTcpKeepAlive = flag.Duration("timeout_tcp_keepalive", defaultTcpKeepAlive,
 		"The default TCP keepalive timeout for server sockets, a duration")
 	flagSearchPar = flag.Int("num_parallel", defaultSearchParallel,
@@ -122,6 +126,7 @@ type system struct {
 	repos    afind.KeyValueStorer
 	indexer  afind.Indexer
 	searcher afind.Searcher
+	finder   afind.Finder
 	config   afind.Config
 
 	quit chan struct{}
@@ -137,6 +142,7 @@ func newAfind(cfg afind.Config) system {
 	}
 	sys.indexer = afind.NewIndexer(&sys.config, sys.repos)
 	sys.searcher = afind.NewSearcher(&sys.config, sys.repos)
+	sys.finder = afind.NewFinder(&sys.config, sys.repos)
 	return sys
 }
 
@@ -146,7 +152,7 @@ func main() {
 	setupLogging()
 	log.Info("afindd daemon starting")
 	af := newAfind(cfg)
-	server := api.NewServer(af.repos, af.indexer, af.searcher, &cfg)
+	server := api.NewServer(af.repos, af.indexer, af.searcher, af.finder, &cfg)
 
 	// setup quit signal channel (aka handler)
 	quit := make(chan os.Signal, 1)

@@ -13,6 +13,7 @@ type baseServer struct {
 	repos    afind.KeyValueStorer
 	indexer  afind.Indexer
 	searcher afind.Searcher
+	finder   afind.Finder
 	config   afind.Config
 
 	quit chan struct{}
@@ -20,8 +21,8 @@ type baseServer struct {
 
 // NewServer creates a new base server from the components provided
 func NewServer(rs afind.KeyValueStorer, ix afind.Indexer,
-	sr afind.Searcher, c *afind.Config) *baseServer {
-	return &baseServer{rs, ix, sr, *c, make(chan struct{}, 1)}
+	sr afind.Searcher, f afind.Finder, c *afind.Config) *baseServer {
+	return &baseServer{rs, ix, sr, f, *c, make(chan struct{}, 1)}
 }
 
 func (base *baseServer) Quit() {
@@ -59,6 +60,10 @@ func isLocal(config *afind.Config, h string) bool {
 }
 
 func getAddress(meta afind.Meta, port string) string {
+	if meta.Host() == "" && port == "" {
+		// this shouldn't happen
+		panic("empty address passed to getAddress")
+	}
 	if port == "" {
 		port = ":" + utils.DefaultRpcPort
 	} else if port[0] != ':' {
