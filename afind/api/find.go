@@ -127,7 +127,7 @@ func doFind(s *findServer, q afind.FindQuery, timeout time.Duration) (
 
 	fr = afind.NewFindResult()
 	fr.MaxMatches = q.MaxMatches
-	repos := genGetReqpos(s.repos, q.RepoKeys, q.Meta, q.MetaRegexpMatch)
+	count := 0
 	chQuery := make(chan par.RequestFunc, 100)
 	chResult := make(chan *afind.FindResult, 100)
 
@@ -138,11 +138,7 @@ func doFind(s *findServer, q afind.FindQuery, timeout time.Duration) (
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	if len(repos) == 0 {
-		err = errs.NewRepoUnavailableError()
-	} else {
-		err = q.Normalize()
-	}
+	err = q.Normalize()
 	if err != nil {
 		fr.SetError(err)
 		goto done
@@ -155,6 +151,7 @@ func doFind(s *findServer, q afind.FindQuery, timeout time.Duration) (
 		close(chResult)
 	}()
 	for in := range chResult {
+		count++
 		fr.Update(in)
 		if fr.EnoughResults() {
 			log.Debug("%s finished early (%d matches)",
@@ -162,7 +159,11 @@ func doFind(s *findServer, q afind.FindQuery, timeout time.Duration) (
 			cancel()
 		}
 	}
+	if count < 1 {
+		err = errs.NewRepoUnavailableError()
+	}
 	sw.Stop("queryFind")
+
 done:
 	log.Info("find [%v] done (%v matches in %v files) (%v)",
 		q.PathRe, fr.NumMatches,
@@ -217,7 +218,7 @@ func getFindRequests(
 
 	for host, keys := range hosts {
 		if maxBe > 0 && countBe >= maxBe {
-			log.Warning("search [%v] max backend requests (%d)", q, maxBe)
+			log.Warning("%s max backend requests (%d)", logmsgFind(q), maxBe)
 			break
 		}
 
@@ -238,7 +239,6 @@ func getFindRequests(
 			chQuery <- remoteFind(s, this, chResult)
 		}
 	}
-
 }
 
 func localFind(
@@ -246,7 +246,6 @@ func localFind(
 	q afind.FindQuery,
 	results chan *afind.FindResult) par.RequestFunc {
 
-	log.Debug("localFind query %v", q)
 	return func(ctx context.Context) error {
 		sw := stopwatch.New()
 		sw.Start("*")

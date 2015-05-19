@@ -69,28 +69,22 @@ func getRepos(
 	return afind.ReposMatchingMeta(rstore, request.Meta, request.MetaRegexpMatch, max)
 }
 
-func getRequests(
+func getSearchQueries(
 	s *searchServer,
-	q afind.SearchQuery) (
-	count int,
+	q afind.SearchQuery,
 	chQuery chan par.RequestFunc,
 	chResult chan *afind.SearchResult) {
 
 	sw := stopwatch.New()
 	sw.Start("*")
+	repos := genGetReqpos(s.repos, q.RepoKeys, q.Meta, q.MetaRegexpMatch)
 
-	maxBe := s.cfg.MaxSearchReqBe
-	repos := getRepos(s.repos, q, s.cfg.MaxSearchRepo)
-	numrepos := len(repos)
+	count := 0
 	countBe := 0
+	maxBe := s.cfg.MaxSearchReqBe
 
-	chQuery = make(chan par.RequestFunc, numrepos+1)
-	chResult = make(chan *afind.SearchResult, numrepos+1)
-	// whatever the case, we always close the request channel
-	// upon completion, or we will deadlock
 	defer close(chQuery)
-
-	if numrepos < 1 {
+	if len(repos) < 1 {
 		return
 	}
 
@@ -104,37 +98,33 @@ func getRequests(
 		hosts[host] = append(hosts[host], repo.Key)
 	}
 
-	// A single request is built for each remote host, containing
-	// all of the repo keys to search. For local requests, the
-	// query for each repo is added as a separate request, to
-	// parallelize local work.
 	for host, keys := range hosts {
 		if maxBe > 0 && countBe >= maxBe {
-			log.Warning("search [%v] max backend requests (%d)", q, maxBe)
+			log.Warning("%s max backend requests (%d)", logmsgSearch(q), maxBe)
 			break
 		}
 
 		this := afind.SearchQuery(q)
+		this.RepoKeys = []string{}
 		this.Meta.SetHost(host)
 		if isLocal(s.cfg, host) {
 			// local requests are not concatenated
-			log.Debug("new local queries for keys=%v", keys)
 			for _, key := range keys {
 				this.RepoKeys = []string{key}
 				count++
 				chQuery <- localSearch(s, this, chResult)
 			}
+			log.Debug("new local queries for keys=%v", this.RepoKeys)
 		} else {
-			log.Debug("new remote query host=%v keys=%v", host, keys)
 			this.RepoKeys = keys
 			count++
 			countBe++
 			chQuery <- remoteSearch(s, this, chResult)
+			log.Debug("new remote query host=%v keys=%v", host, this.RepoKeys)
 		}
 	}
 	elapsed := sw.Stop("*")
-	log.Debug("getRequests count=%d (%d be) elapsed=%v", count, countBe, elapsed)
-	return
+	log.Debug("getSearchQueries count=%d (%d be) elapsed=%v", count, countBe, elapsed)
 }
 
 // Common HTTP/GobRPC search server
@@ -272,36 +262,41 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	resp = afind.NewSearchResult()
 	resp.MaxMatches = req.MaxMatches
 
-	// Determine which repos to search, flatten requests per host,
-	// then execute the searches concurrently.
-	sw.Start("get_requests")
-	numreq, reqch, ch := getRequests(s, req)
-	resp.Durations.GetRepos = sw.Stop("get_requests")
-	log.Debug("getRequests numRequests=%d elapsed=%v",
-		numreq, resp.Durations.GetRepos)
+	// Start filling the query channel
+	chQuery := make(chan par.RequestFunc, 100)
+	chResult := make(chan *afind.SearchResult, 10)
+	go getSearchQueries(s, req, chQuery, chResult)
 
 	// Get a request context
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// Execute the requests
+	err = req.Normalize()
+	if err != nil {
+		resp.SetError(err)
+		goto done
+	}
+
+	// Execute the requests concurrently
 	go func() {
-		_ = par.Requests(reqch).WithConcurrency(s.cfg.MaxSearchC).DoWithContext(ctx)
-		close(ch)
+		_ = par.Requests(chQuery).WithConcurrency(s.cfg.MaxSearchC).DoWithContext(ctx)
+		close(chResult)
 	}()
 
 	// Merge the incoming results until we have enough.
 	// Updating first ensures we'll collect more than enough if
 	// they're available.
-	for in := range ch {
+	for in := range chResult {
 		resp.Update(in)
 		if resp.EnoughResults() {
 			log.Debug("%s finished early (%d matches)",
 				msg, resp.NumMatches)
 			cancel()
+			break
 		}
 	}
 
+done:
 	resp.Durations.Search = sw.Stop("total")
 	if resp.Error == "" {
 		msg += " ok"

@@ -2,7 +2,6 @@ package afind
 
 import (
 	"os"
-	"sync"
 	"time"
 
 	"code.google.com/p/go.net/context"
@@ -28,7 +27,7 @@ var (
 // SearchFunc is the generic backend search function prototype
 type SearchFunc func(SearchQuery, chan *SearchResult) error
 
-// A client Search Query.
+// SearchQuery represents a search request
 //
 // If one or more RepoKeys are supplied, only Repos matching those
 // key(s) are searched, if any. If RepoKeys is empty, all Repo are
@@ -87,7 +86,7 @@ type SearchContext struct {
 	Post int `json:"post"`
 }
 
-// Returns a SearchQuery value given the parameters
+// NewSearchQuery returns a SearchQuery value given the parameters
 func NewSearchQuery(re, pathRe string, ignore bool, repoKeys []string) SearchQuery {
 	return SearchQuery{
 		Re:         re,
@@ -246,7 +245,7 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	var repo *Repo
 	var shards []string
 	var irepo interface{}
-	var wg sync.WaitGroup
+	var waitingFor int
 
 	resp = NewSearchResult()
 	ch := make(chan *SearchResult, 10)
@@ -279,7 +278,8 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	}
 
 	shards = repo.Shards()
-	wg.Add(len(shards))
+	waitingFor = len(shards)
+
 	for _, shard := range shards {
 		go func(r *Repo, fname string) {
 			sr, e := searchLocal(ctx, query, r, fname)
@@ -306,20 +306,21 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 				ch <- sr
 			}
 
-			// Notify completion after potentially sending on the channel
-			wg.Done()
-
 		}(repo, shard)
 	}
 
 	// Await goroutine completion either in error or otherwise
-	wg.Wait()
-	close(ch)
-
-	// Collect and merge responses
-	for in := range ch {
-		resp.Update(in)
+	for waitingFor > 0 {
+		select {
+		case <-ctx.Done():
+			break
+		case in := <-ch:
+			log.Debug("got one %q", in)
+			resp.Update(in)
+			waitingFor--
+		}
 	}
+	close(ch)
 
 done:
 	resp.Durations.Search = sw.Stop("total")
@@ -334,4 +335,21 @@ func searchLocal(ctx context.Context, req SearchQuery, repo *Repo, fname string)
 	sr, err := newGrep(fname, repo.Root, getFileSystem(ctx, repo.Root)).search(ctx, req)
 	sr.Repos[repo.Key] = repo
 	return sr, err
+}
+
+func (q *SearchQuery) Normalize() error {
+	// Validate
+	if len(q.Re) < 3 {
+		return errs.NewValueError("re", "must be at least 3 characters")
+	}
+	return nil
+}
+
+// SetError sets the Error attribute appropriately
+func (sr *SearchResult) SetError(err error) {
+	if e, ok := err.(*errs.StructError); ok {
+		sr.Error = e.Error()
+	} else if err != nil {
+		sr.Error = errs.NewStructError(err).Error()
+	}
 }
