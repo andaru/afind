@@ -42,6 +42,7 @@ type Repo struct {
 	TimeUpdated time.Time `json:"time_updated"`
 }
 
+// SetMeta updates the Repo's Meta first from defaults, then replace.
 func (r *Repo) SetMeta(defaults Meta, replace Meta) {
 	for k, v := range defaults {
 		r.Meta[k] = v
@@ -51,6 +52,7 @@ func (r *Repo) SetMeta(defaults Meta, replace Meta) {
 	}
 }
 
+// SetHost sets the Repo's Meta data host value
 func (r *Repo) SetHost(host string) {
 	r.Meta.SetHost(host)
 }
@@ -83,14 +85,12 @@ type Meta map[string]string
 // Host returns the `host` key from the metadata.
 // This key is used by the afind system to denote the host containing
 // a particular Repo.
-func (m Meta) Host() string {
-	if v, ok := m["host"]; !ok {
-		return ""
-	} else {
-		return v
-	}
+func (m Meta) Host() (name string) {
+	name, _ = m["host"]
+	return
 }
 
+// SetHost sets the Meta's host value
 func (m Meta) SetHost(host string) {
 	m["host"] = host
 }
@@ -144,7 +144,7 @@ func (m Meta) MatchesRegexp(other Meta) bool {
 	return true
 }
 
-// Updates this metadata from some other metadata
+// Update updates this metadata from some other metadata
 func (m Meta) Update(other Meta) {
 	for k, v := range other {
 		m[k] = v
@@ -167,6 +167,7 @@ func newRepoFromQuery(q *IndexQuery, ixpath string) *Repo {
 // used to avoid infinite recursion in UnmarshalJSON
 type repo Repo
 
+// UnmarshalJSON unmarshals the byte slice of JSON into the Repo
 func (r *Repo) UnmarshalJSON(b []byte) (err error) {
 	newr := repo{Meta: make(Meta)}
 	err = json.Unmarshal(b, &newr)
