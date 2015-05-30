@@ -51,11 +51,14 @@ func TestConfig(t *testing.T) {
 	eq(t, false, c.Verbose())
 	c.SetVerbose(true)
 	eq(t, true, c.Verbose())
+	eq(t, false, c.DeleteRepoOnError)
+	c.DeleteRepoOnError = true
+	eq(t, true, c.DeleteRepoOnError)
 }
 
 func TestListenerRpc(t *testing.T) {
 	c := newConfig()
-	c.RpcBind = "0.0.0.0:0"
+	c.RPCBind = "0.0.0.0:0"
 	listenah, err := c.ListenerRpc()
 	neq(t, listenah.Addr().String(), "0.0.0.0:0")
 	neq(t, listenah.Addr().String(), "")

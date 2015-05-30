@@ -203,18 +203,12 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 
 	addr := getAddress(req.Meta, s.cfg.PortRpc())
 	return func(ctx context.Context) error {
-		sw := stopwatch.New()
-		sw.Start("*")
 		sr := afind.NewSearchResult()
 		cl, err := NewRpcClient(addr)
 		if err == nil {
 			client := NewSearcherClient(cl)
 			defer client.Close()
-
 			sr, err = client.Search(ctx, req)
-			if sr != nil {
-				updateRepos(s.repos, sr.Repos)
-			}
 		}
 		if err != nil {
 			sr.Errors[req.Meta.Host()] = errs.NewStructError(err)
@@ -223,10 +217,6 @@ func remoteSearch(s *searchServer, req afind.SearchQuery,
 		select {
 		case <-ctx.Done():
 		default:
-			if sr.NumMatches > 0 {
-				log.Debug("search backend %v (%d matches) (%v)",
-					addr, sr.NumMatches, sw.Stop("*"))
-			}
 			results <- sr
 		}
 		return nil
@@ -261,6 +251,7 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 
 	resp = afind.NewSearchResult()
 	resp.MaxMatches = req.MaxMatches
+	updateRepos := map[string]*afind.Repo{}
 
 	// Start filling the query channel
 	chQuery := make(chan par.RequestFunc, 100)
@@ -287,6 +278,13 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	// Updating first ensures we'll collect more than enough if
 	// they're available.
 	for in := range chResult {
+		// Repositories with good and bad responses must error out
+		for key, repo := range in.Repos {
+			if r, ok := updateRepos[key]; ok && r.State == afind.ERROR {
+				continue
+			}
+			updateRepos[key] = repo
+		}
 		resp.Update(in)
 		if resp.EnoughResults() {
 			log.Debug("%s finished early (%d matches)",
@@ -297,6 +295,15 @@ func doSearch(s *searchServer, req afind.SearchQuery, timeout time.Duration) (
 	}
 
 done:
+	// Update our knowledge about Repo found in the responses
+	for key, repo := range updateRepos {
+		if repo.State == afind.OK {
+			_ = s.repos.Set(key, repo)
+		} else if s.cfg.DeleteRepoOnError {
+			_ = s.repos.Delete(key)
+		}
+	}
+
 	resp.Durations.Search = sw.Stop("total")
 	if resp.Error == "" {
 		msg += " ok"
@@ -305,10 +312,4 @@ done:
 	}
 	log.Info("%s (%d matches) (%v)", msg, resp.NumMatches, resp.Durations.Search)
 	return
-}
-
-func updateRepos(kv afind.KeyValueStorer, repos map[string]*afind.Repo) {
-	for key, repo := range repos {
-		_ = kv.Set(key, repo)
-	}
 }

@@ -9,18 +9,18 @@ import (
 	"github.com/andaru/afind/utils"
 )
 
-// Afind configuration file definition and handling
-
+// Config holds the afindd instance live configuration
 type Config struct {
-	IndexInRepo    bool   // the index file is placed in Repo's Root if true
-	IndexRoot      string // path for index files if IndexInRepo is false
-	HttpBind       string // HTTP bind address (e.g. ":80" or "0.0.0.0:80")
-	HttpsBind      string // HTTPs bind address
-	RpcBind        string // Gob RPC bind address
-	NumShards      int    // number of index shards to create per Repo
-	MaxSearchC     int    // Maximum search concurrency
-	MaxSearchRepo  int    // Maximum number of Repo to consider per search
-	MaxSearchReqBe int    // Maximum number of backend requests per query
+	IndexInRepo       bool   // the index file is placed in Repo's Root if true
+	IndexRoot         string // path for index files if IndexInRepo is false
+	HTTPBind          string // HTTP bind address (e.g. ":80" or "0.0.0.0:80")
+	HTTPSBind         string // HTTPs bind address
+	RPCBind           string // Gob RPC bind address
+	NumShards         int    // number of index shards to create per Repo
+	MaxSearchC        int    // Maximum search concurrency
+	MaxSearchRepo     int    // Maximum number of Repo to consider per search
+	MaxSearchReqBe    int    // Maximum number of backend requests per query
+	DeleteRepoOnError bool   // If True, delete Repo from afindd on ERROR
 
 	// Default index, search and find timeouts, in seconds
 	// If not provided, the defaults below will be used, see
@@ -38,8 +38,8 @@ type Config struct {
 
 	DbFile string // If non-empty, the JSON file containing the config backing store
 
-	TlsCertfile string
-	TlsKeyfile  string
+	TLSCertfile string
+	TLSKeyfile  string
 
 	verbose bool
 }
@@ -120,7 +120,7 @@ func (c *Config) Host() string {
 }
 
 func (c *Config) ListenerRpc() (l net.Listener, err error) {
-	return net.Listen("tcp", c.RpcBind)
+	return net.Listen("tcp", c.RPCBind)
 }
 
 func (c *Config) ListenerTcpWithTimeout(

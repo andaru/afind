@@ -115,18 +115,12 @@ func remoteIndex(s *indexServer, req afind.IndexQuery,
 		if err == nil {
 			client := NewIndexerClient(cl)
 			defer client.Close()
-
 			ir, err = client.Index(ctx, req)
-			if ir != nil && ir.Repo != nil {
-				updateRepos(s.repos,
-					map[string]*afind.Repo{ir.Repo.Key: ir.Repo})
-			}
 		}
 		ir.SetError(err)
 
 		select {
 		case <-ctx.Done():
-			return nil
 		default:
 			results <- ir
 		}
@@ -205,21 +199,26 @@ func doIndex(s *indexServer, req afind.IndexQuery, timeout time.Duration) (
 				errs.NewTimeoutError("index"))
 		case incoming := <-ch:
 			if incoming == nil {
+				log.Warning("unexpectedly nil incoming *IndexResult")
 				resp.Error = errs.NewStructError(
 					errs.NewRepoUnavailableError())
 				break
 			}
-			if incoming.Error != nil {
-				err = incoming.Error
-			}
-			// Set the repo if we have one in the response
 			if incoming.Repo != nil {
-				_ = s.repos.Set(incoming.Repo.Key, incoming.Repo)
+				if incoming.Repo.State == afind.OK {
+					// Set the repo if we have a valid one in the response
+					_ = s.repos.Set(incoming.Repo.Key, incoming.Repo)
+				} else if s.cfg.DeleteRepoOnError {
+					// Delete the not OK repo we received.
+					log.Warning("unexpected bad repo state: %#v", incoming)
+					_ = s.repos.Delete(req.Key)
+				}
 			} else {
-				// Delete the temporary indexing repo
+				// There was no repo, so delete any temporary one
 				_ = s.repos.Delete(req.Key)
 			}
 			resp = incoming
+			err = incoming.Error
 		}
 	} else {
 		// neither a local query or a recursive query,

@@ -242,13 +242,14 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	sw := stopwatch.New()
 	sw.Start("total")
 
-	var repo *Repo
-	var shards []string
-	var irepo interface{}
-	var waitingFor int
-
+	var (
+		repo       *Repo
+		shards     []string
+		irepo      interface{}
+		waitingFor int
+		ch         chan *SearchResult
+	)
 	resp = NewSearchResult()
-	ch := make(chan *SearchResult, 10)
 
 	// If the repo is not found or is not available to search,
 	// exit with a RepoUnavailable error. Ignore repo being
@@ -268,34 +269,45 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 	}
 	repo = irepo.(*Repo)
 	resp.Repos[repokey] = repo
+
 	if repo.State == INDEXING {
-		// The repo is indexing; we won't copy it to the output
+		// The repo is (con)currently indexing
 		goto done
 	} else if repo.State != OK {
-		// Otherwise, we saw an error
+		// The repo is currently in error, exit early
+		// and potentially delete the offending repo.
 		resp.Errors[repokey] = kRepoUnavailableError
+		if s.cfg.DeleteRepoOnError {
+			_ = s.repos.Delete(repokey)
+		}
 		goto done
 	}
 
 	shards = repo.Shards()
 	waitingFor = len(shards)
+	ch = make(chan *SearchResult, waitingFor+1)
+	defer close(ch)
 
 	for _, shard := range shards {
 		go func(r *Repo, fname string) {
 			sr, e := searchLocal(ctx, query, r, fname)
 			sr.Repos[r.Key] = r
-			if sr.NumMatches > 0 {
-				log.Debug("search backend done [%s] %d matches (%v)",
-					query.Re, sr.NumMatches, sr.Durations.Search)
-			}
 			if e != nil {
-				// Report the error
-				sr.Errors[r.Key] = errs.NewStructError(e)
-
-				// Maybe mark the repo as errored (unavailable)
+				// Report the error, possibly marking the repo as unavailable
+				// and if so, potentially deleting it if configured to do so.
 				if os.IsNotExist(e) || os.IsPermission(e) {
+					log.Warning("repo [%s] not available error: %v", r.Key, e)
 					r.State = ERROR
-					_ = s.repos.Set(r.Key, r)
+					sr.Errors[r.Key] = errs.NewStructError(
+						errs.NewRepoUnavailableError())
+
+					if s.cfg.DeleteRepoOnError {
+						_ = s.repos.Delete(r.Key)
+					} else {
+						_ = s.repos.Set(r.Key, r)
+					}
+				} else {
+					sr.Errors[r.Key] = errs.NewStructError(e)
 				}
 			}
 			select {
@@ -320,8 +332,6 @@ func (s searcher) Search(ctx context.Context, query SearchQuery) (
 			waitingFor--
 		}
 	}
-	close(ch)
-
 done:
 	resp.Durations.Search = sw.Stop("total")
 	log.Info("search [%s] [path %s] local done %d matches errors=%v (%v)",

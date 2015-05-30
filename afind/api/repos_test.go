@@ -22,7 +22,7 @@ func TestReposGet(t *testing.T) {
 		"repo1": repo1,
 	})
 
-	cl, err := NewRpcClient(sys.config.RpcBind)
+	cl, err := NewRpcClient(sys.config.RPCBind)
 	if err != nil {
 		t.Error("unexpected client error:", err)
 	}

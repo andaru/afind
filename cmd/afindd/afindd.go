@@ -15,13 +15,14 @@ import (
 )
 
 const (
-	defaultTcpKeepAlive   = 3 * time.Minute
-	defaultTimeoutIndex   = 30 * time.Minute
-	defaultTimeoutSearch  = 30 * time.Second
-	defaultTimeoutFind    = 5000 * time.Millisecond
-	defaultSearchParallel = 200
-	defaultSearchRepo     = 0
-	defaultSearchReqBe    = 300
+	defaultTcpKeepAlive      = 3 * time.Minute
+	defaultTimeoutIndex      = 30 * time.Minute
+	defaultTimeoutSearch     = 30 * time.Second
+	defaultTimeoutFind       = 5000 * time.Millisecond
+	defaultSearchParallel    = 200
+	defaultSearchRepo        = 0
+	defaultSearchReqBe       = 300
+	defaultDeleteRepoOnError = true
 )
 
 func init() {
@@ -37,9 +38,9 @@ func getConfig() afind.Config {
 	c := afind.Config{
 		IndexRoot:           *flagIndexRoot,
 		IndexInRepo:         *flagIndexInRepo,
-		HttpBind:            *flagHttpBind,
-		HttpsBind:           *flagHttpsBind,
-		RpcBind:             *flagRpcBind,
+		HTTPBind:            *flagHTTPBind,
+		HTTPSBind:           *flagHTTPSBind,
+		RPCBind:             *flagRPCBind,
 		NumShards:           *flagNumShards,
 		RepoMeta:            afind.Meta(flagMeta),
 		DbFile:              *flagDbFile,
@@ -50,6 +51,7 @@ func getConfig() afind.Config {
 		MaxSearchC:          *flagSearchPar,
 		MaxSearchRepo:       *flagSearchRepo,
 		MaxSearchReqBe:      *flagSearchReqBe,
+		DeleteRepoOnError:   *flagDeleteRepoOnError,
 	}
 	c.SetVerbose(*flagVerbose)
 	c.Host()
@@ -63,11 +65,11 @@ var (
 		"Write indices to -index_root if false, else in repository root path")
 	flagNoIndex = flag.String("noindex", "",
 		"A regexp matching file names to skip for indexing")
-	flagRpcBind = flag.String("rpc", ":30800",
+	flagRPCBind = flag.String("rpc", ":30800",
 		"Run RPC server on this address:port")
-	flagHttpBind = flag.String("http", "",
+	flagHTTPBind = flag.String("http", "",
 		"Run HTTP server on this address:port")
-	flagHttpsBind = flag.String("https", "",
+	flagHTTPSBind = flag.String("https", "",
 		"Run HTTPS server on this address:port")
 	flagNumShards = flag.Int("nshards", 4,
 		"Number of file shards created per Repo indexing request")
@@ -91,6 +93,8 @@ var (
 		"Maximum number of backend requests per query")
 	flagLogPath = flag.String("log", os.DevNull,
 		"Log to this path (use - for stdout)")
+	flagDeleteRepoOnError = flag.Bool("delete_repo_on_error", true,
+		"Delete Repo from storage if their state changes to ERROR")
 	flagMeta = make(flags.SSMap)
 
 	log *logging.Logger
@@ -158,10 +162,10 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 
-	if cfg.RpcBind != "" {
-		log.Info("rpc server start [%v]", cfg.RpcBind)
+	if cfg.RPCBind != "" {
+		log.Info("rpc server start [%v]", cfg.RPCBind)
 		if l, err := cfg.ListenerTcpWithTimeout(
-			cfg.RpcBind, cfg.GetTimeoutTcpKeepAlive()); err == nil {
+			cfg.RPCBind, cfg.GetTimeoutTcpKeepAlive()); err == nil {
 
 			s := api.NewRpcServer(l, server)
 			s.Register()
@@ -178,15 +182,15 @@ func main() {
 		}
 	}
 
-	if cfg.HttpBind != "" {
-		log.Info("http server start [%v]", cfg.HttpBind)
+	if cfg.HTTPBind != "" {
+		log.Info("http server start [%v]", cfg.HTTPBind)
 		if l, err := cfg.ListenerTcpWithTimeout(
-			cfg.HttpBind, cfg.GetTimeoutTcpKeepAlive()); err == nil {
+			cfg.HTTPBind, cfg.GetTimeoutTcpKeepAlive()); err == nil {
 
 			s := api.NewWebServer(server)
 			s.Register()
 			go func() {
-				httpd := s.HttpServer(cfg.HttpBind)
+				httpd := s.HttpServer(cfg.HTTPBind)
 				err := httpd.Serve(l)
 				if err != nil {
 					crit(err)
@@ -197,13 +201,13 @@ func main() {
 		}
 	}
 
-	if cfg.HttpsBind != "" {
-		log.Info("https server start [%v]", cfg.HttpsBind)
+	if cfg.HTTPSBind != "" {
+		log.Info("https server start [%v]", cfg.HTTPSBind)
 		s := api.NewWebServer(server)
 		s.Register()
 		go func() {
-			err := s.HttpServer(cfg.HttpsBind).ListenAndServeTLS(
-				cfg.TlsCertfile, cfg.TlsKeyfile)
+			err := s.HttpServer(cfg.HTTPSBind).ListenAndServeTLS(
+				cfg.TLSCertfile, cfg.TLSKeyfile)
 			if err != nil {
 				crit(err)
 			}

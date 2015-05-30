@@ -245,7 +245,7 @@ var (
 func getTestConfig() (c afind.Config) {
 	c = afind.Config{RepoMeta: afind.Meta{}}
 	c.RepoMeta.SetHost("testhost")
-	c.RpcBind = "127.0.0.99:" + t_default_fe_port
+	c.RPCBind = "127.0.0.99:" + t_default_fe_port
 	c.IndexInRepo = true
 	c.NumShards = 1
 	c.MaxSearchC = 8
@@ -255,7 +255,7 @@ func getTestConfig() (c afind.Config) {
 func getTestConfigHostPort(host, port string) (c afind.Config) {
 	c = getTestConfig()
 	c.RepoMeta.SetHost(host)
-	c.RpcBind = host + ":" + port
+	c.RPCBind = host + ":" + port
 	c.RepoMeta["port.rpc"] = port
 	return c
 }
@@ -346,7 +346,7 @@ func TestListenerBindError(t *testing.T) {
 		t.SkipNow()
 	}
 	sys := newTestAfind(getTestConfig())
-	sys.config.RpcBind = ":1"
+	sys.config.RPCBind = ":1"
 	// In theory, this may still block if port 1 can be bound, so
 	// we have to guard with a brief timeout.
 	done := make(chan struct{}, 1)
@@ -375,7 +375,7 @@ func TestSearchAgainstEmptyAfindDb(t *testing.T) {
 	sys := newRpcServer(t, getTestConfig())
 	defer sys.rpcServer.CloseNoErr()
 
-	cl, err := NewRpcClient(sys.config.RpcBind)
+	cl, err := NewRpcClient(sys.config.RPCBind)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
@@ -414,7 +414,7 @@ func TestSearchSingleRepo(t *testing.T) {
 	repo.NumShards = 1
 	testAddRepos(sys, map[string]*afind.Repo{"repo1": repo})
 
-	cl, err := NewRpcClient(sys.config.RpcBind)
+	cl, err := NewRpcClient(sys.config.RPCBind)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
@@ -490,7 +490,7 @@ func TestRemoteSearch(t *testing.T) {
 	testAddRepos(fe, map[string]*afind.Repo{"remote1": repo})
 	testAddRepos(be, map[string]*afind.Repo{"remote1": repo})
 
-	cl, err := NewRpcClient(fe.config.RpcBind)
+	cl, err := NewRpcClient(fe.config.RPCBind)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}

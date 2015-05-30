@@ -48,7 +48,7 @@ func TestIndex(t *testing.T) {
 	sys := newRpcServer(t, getTestConfig())
 	defer sys.rpcServer.CloseNoErr()
 
-	cl, err := NewRpcClient(sys.config.RpcBind)
+	cl, err := NewRpcClient(sys.config.RPCBind)
 	if err != nil {
 		t.Error("unexpected error:", err)
 	}
