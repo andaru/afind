@@ -129,11 +129,9 @@ func doFind(s *findServer, q afind.FindQuery, timeout time.Duration) (
 	fr.MaxMatches = q.MaxMatches
 	count := 0
 	chQuery := make(chan par.RequestFunc, 100)
-	chResult := make(chan *afind.FindResult, 100)
+	chResult := make(chan *afind.FindResult, 10)
 
-	sw.Start("getFindRequests")
-	getFindRequests(s, q, chQuery, chResult)
-	log.Debug("%s getFindRequests elapsed=%v", msg, sw.Stop("getFindRequests"))
+	go getFindRequests(s, q, chQuery, chResult)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
